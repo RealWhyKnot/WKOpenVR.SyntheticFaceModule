@@ -1,11 +1,24 @@
 param(
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    [string]$Version = "",
+    [string]$SdkVersion = "0.1.0"
 )
 
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$version = [System.IO.File]::ReadAllText((Join-Path $root "version.txt")).Trim()
+$versionPath = Join-Path $root "version.txt"
+if (-not [string]::IsNullOrWhiteSpace($Version)) {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($versionPath, $Version.Trim(), $utf8NoBom)
+}
+$version = [System.IO.File]::ReadAllText($versionPath).Trim()
+if ([string]::IsNullOrWhiteSpace($version)) {
+    throw "version.txt is empty"
+}
+if ([string]::IsNullOrWhiteSpace($SdkVersion)) {
+    throw "SdkVersion is empty"
+}
 $project = Join-Path $root "src\WKOpenVR.SyntheticFaceModule\WKOpenVR.SyntheticFaceModule.csproj"
 $artifacts = Join-Path $root "artifacts"
 $publishDir = Join-Path $artifacts "publish"
@@ -19,7 +32,7 @@ if (Test-Path $publishDir) { Remove-Item -Recurse -Force -LiteralPath $publishDi
 if (Test-Path $stageDir) { Remove-Item -Recurse -Force -LiteralPath $stageDir }
 New-Item -ItemType Directory -Force -Path $publishDir, $assembliesDir, $packageDir | Out-Null
 
-dotnet publish $project -c $Configuration -o $publishDir
+dotnet publish $project -c $Configuration -o $publishDir /p:Version=$version /p:WkOpenVrFaceSdkVersion=$SdkVersion
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Get-ChildItem -Path $publishDir -File | ForEach-Object {
@@ -34,13 +47,13 @@ $manifest = [ordered]@{
     homepage = "https://github.com/whyknotdev/WKOpenVR.SyntheticFaceModule"
     license = "GPL-3.0-only"
     version = $version
-    sdk_version = "0.1.0"
+    sdk_version = $SdkVersion
     min_host_version = "1.0"
     supported_hmds = @("*")
     capabilities = @("expression", "audio")
     platforms = @("windows-x64")
     module_kind = "wkopenvr-native"
-    module_api = "WKOpenVR.FaceTracking.Sdk/0.1.0"
+    module_api = "WKOpenVR.FaceTracking.Sdk/" + $SdkVersion
     sdk_package = "WKOpenVR.FaceTracking.Sdk"
     entry_assembly = "WKOpenVR.SyntheticFaceModule.dll"
     entry_type = "WKOpenVR.SyntheticFaceModule.SyntheticFaceModule"

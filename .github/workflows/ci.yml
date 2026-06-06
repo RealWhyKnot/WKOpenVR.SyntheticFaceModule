@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build + test
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout module
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          path: WKOpenVR.SyntheticFaceModule
+
+      - name: Checkout SDK
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.repository_owner }}/WKOpenVR.FaceTracking.Sdk
+          token: ${{ secrets.WKOPENVR_SDK_REPO_TOKEN || github.token }}
+          fetch-depth: 0
+          path: WKOpenVR.FaceTracking.Sdk
+
+      - name: Set up .NET 10 SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-synthetic-${{ runner.os }}-${{ hashFiles('WKOpenVR.SyntheticFaceModule/**/*.csproj', 'WKOpenVR.FaceTracking.Sdk/**/*.csproj', 'WKOpenVR.SyntheticFaceModule/global.json', 'WKOpenVR.FaceTracking.Sdk/global.json') }}
+          restore-keys: |
+            nuget-synthetic-${{ runner.os }}-
+
+      - name: Build SDK package
+        shell: pwsh
+        working-directory: WKOpenVR.FaceTracking.Sdk
+        run: .\build.ps1 -Configuration Release
+
+      - name: Build module
+        shell: pwsh
+        working-directory: WKOpenVR.SyntheticFaceModule
+        run: .\build.ps1 -Configuration Release
+
+      - name: Run tests
+        shell: pwsh
+        working-directory: WKOpenVR.SyntheticFaceModule
+        run: .\test.ps1 -Configuration Release
+
+      - name: Build module package
+        shell: pwsh
+        working-directory: WKOpenVR.SyntheticFaceModule
+        run: .\pack.ps1 -Configuration Release
+
+      - name: Run lint
+        shell: pwsh
+        working-directory: WKOpenVR.SyntheticFaceModule
+        run: .\lint.ps1 -Configuration Release
+
+      - name: Upload module artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: wkopenvr-synthetic-face-module-${{ github.sha }}
+          path: |
+            WKOpenVR.SyntheticFaceModule/artifacts/packages/*.zip
+            WKOpenVR.SyntheticFaceModule/artifacts/packages/*.manifest.json
+          if-no-files-found: error

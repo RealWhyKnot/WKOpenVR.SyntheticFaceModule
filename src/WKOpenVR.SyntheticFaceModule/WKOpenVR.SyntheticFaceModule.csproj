@@ -5,9 +5,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <OutputType>Library</OutputType>
+    <WkOpenVrFaceSdkVersion Condition="'$(WkOpenVrFaceSdkVersion)' == ''">0.1.0</WkOpenVrFaceSdkVersion>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="WKOpenVR.FaceTracking.Sdk" Version="0.1.0" />
+    <PackageReference Include="WKOpenVR.FaceTracking.Sdk" Version="$(WkOpenVrFaceSdkVersion)" />
     <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
 </Project>

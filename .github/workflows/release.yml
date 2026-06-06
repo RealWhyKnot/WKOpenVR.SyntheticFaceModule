@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Module version without leading v
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: package
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout module
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          path: WKOpenVR.SyntheticFaceModule
+
+      - name: Checkout SDK
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.repository_owner }}/WKOpenVR.FaceTracking.Sdk
+          token: ${{ secrets.WKOPENVR_SDK_REPO_TOKEN || github.token }}
+          fetch-depth: 0
+          path: WKOpenVR.FaceTracking.Sdk
+
+      - name: Set up .NET 10 SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-synthetic-release-${{ runner.os }}-${{ hashFiles('WKOpenVR.SyntheticFaceModule/**/*.csproj', 'WKOpenVR.FaceTracking.Sdk/**/*.csproj') }}
+          restore-keys: |
+            nuget-synthetic-release-${{ runner.os }}-
+
+      - name: Build tagged SDK package
+        shell: pwsh
+        working-directory: WKOpenVR.FaceTracking.Sdk
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          $version = $env:INPUT_VERSION
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            $version = $env:TAG_NAME -replace '^v', ''
+          }
+          if ([string]::IsNullOrWhiteSpace($version)) { throw "Release version is empty." }
+          .\build.ps1 -Configuration Release -Version $version
+
+      - name: Build tagged module package
+        shell: pwsh
+        working-directory: WKOpenVR.SyntheticFaceModule
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          $version = $env:INPUT_VERSION
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            $version = $env:TAG_NAME -replace '^v', ''
+          }
+          if ([string]::IsNullOrWhiteSpace($version)) { throw "Release version is empty." }
+
+          .\build.ps1 -Configuration Release -Version $version -SdkVersion $version
+          .\test.ps1 -Configuration Release -SdkVersion $version
+          .\pack.ps1 -Configuration Release -Version $version -SdkVersion $version
+
+          $payload = "artifacts/packages/WKOpenVR.SyntheticFaceModule.$version.zip"
+          $manifest = "artifacts/packages/WKOpenVR.SyntheticFaceModule.$version.manifest.json"
+          if (-not (Test-Path -LiteralPath $payload)) { throw "Expected payload missing: $payload" }
+          if (-not (Test-Path -LiteralPath $manifest)) { throw "Expected manifest missing: $manifest" }
+
+      - name: Upload module artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: wkopenvr-synthetic-face-module-${{ github.ref_name }}
+          path: |
+            WKOpenVR.SyntheticFaceModule/artifacts/packages/*.zip
+            WKOpenVR.SyntheticFaceModule/artifacts/packages/*.manifest.json
+          if-no-files-found: error
