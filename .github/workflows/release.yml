@@ -12,7 +12,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   package:
@@ -31,7 +31,6 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ github.repository_owner }}/WKOpenVR.FaceTracking.Sdk
-          token: ${{ secrets.WKOPENVR_SDK_REPO_TOKEN || github.token }}
           fetch-depth: 0
           path: WKOpenVR.FaceTracking.Sdk
 
@@ -53,6 +52,7 @@ jobs:
         working-directory: WKOpenVR.FaceTracking.Sdk
         env:
           TAG_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
           INPUT_VERSION: ${{ inputs.version }}
         run: |
           $version = $env:INPUT_VERSION
@@ -63,6 +63,7 @@ jobs:
           .\build.ps1 -Configuration Release -Version $version
 
       - name: Build tagged module package
+        id: package
         shell: pwsh
         working-directory: WKOpenVR.SyntheticFaceModule
         env:
@@ -74,6 +75,9 @@ jobs:
             $version = $env:TAG_NAME -replace '^v', ''
           }
           if ([string]::IsNullOrWhiteSpace($version)) { throw "Release version is empty." }
+          if ($version -match '-beta' -and $version -notmatch '^\d{4}\.\d+\.\d+\.\d+-beta$') {
+            throw "Beta versions must use YYYY.M.D.N-beta."
+          }
 
           .\build.ps1 -Configuration Release -Version $version -SdkVersion $version
           .\test.ps1 -Configuration Release -SdkVersion $version
@@ -84,6 +88,30 @@ jobs:
           if (-not (Test-Path -LiteralPath $payload)) { throw "Expected payload missing: $payload" }
           if (-not (Test-Path -LiteralPath $manifest)) { throw "Expected manifest missing: $manifest" }
 
+          $payloadSha = (Get-FileHash -LiteralPath $payload -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifestSha = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
+          $notes = @(
+            "WKOpenVR synthetic native face module package.",
+            "",
+            "Attach this module zip to a WKOpenVR native module registry entry, or install it through a registry source that points at this release asset.",
+            "",
+            "Checksums:",
+            "$(Split-Path -Leaf $payload) sha256=$payloadSha",
+            "$(Split-Path -Leaf $manifest) sha256=$manifestSha"
+          ) -join "`n"
+          $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
+          [System.IO.File]::WriteAllText($notesPath, $notes, (New-Object System.Text.UTF8Encoding($false)))
+
+          $isBeta = $version -match '-beta$'
+          $tag = $env:TAG_NAME
+          if ($env:REF_TYPE -ne "tag") {
+            $tag = "v$version"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "notes_path=$notesPath" >> $env:GITHUB_OUTPUT
+          "is_beta=$($isBeta.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
       - name: Upload module artifact
         uses: actions/upload-artifact@v7
         with:
@@ -92,3 +120,20 @@ jobs:
             WKOpenVR.SyntheticFaceModule/artifacts/packages/*.zip
             WKOpenVR.SyntheticFaceModule/artifacts/packages/*.manifest.json
           if-no-files-found: error
+
+      - name: Publish GitHub release
+        shell: pwsh
+        working-directory: WKOpenVR.SyntheticFaceModule
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.package.outputs.tag }}
+          IS_BETA: ${{ steps.package.outputs.is_beta }}
+          NOTES_PATH: ${{ steps.package.outputs.notes_path }}
+        run: |
+          $assets = @(Get-ChildItem -Path "artifacts/packages" -Include "*.zip", "*.manifest.json" -Recurse | ForEach-Object { $_.FullName })
+          if ($assets.Count -eq 0) { throw "No release assets found." }
+
+          $extra = @()
+          if ($env:IS_BETA -eq "true") { $extra = @("--prerelease", "--latest=false") }
+
+          gh release create $env:TAG_NAME --title $env:TAG_NAME --notes-file $env:NOTES_PATH @extra @assets

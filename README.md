@@ -11,3 +11,4 @@ The module starts with microphone-level mouth motion. The DSP path is pure manag
 ```
 
 `pack.ps1` writes the installable payload to `artifacts\packages` and a registry-ready manifest beside it. No public package feed or registry publication is performed by these scripts.
+Tagged releases attach the module zip and manifest to GitHub Releases. The native module registry points at the latest release asset by default, with prerelease versions exposed as beta entries.

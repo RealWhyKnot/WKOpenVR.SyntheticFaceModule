@@ -1,12 +1,40 @@
 param(
     [string]$Configuration = "Release",
     [string]$Version = "",
-    [string]$SdkVersion = "0.1.0"
+    [string]$SdkVersion = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $root
+
+function Resolve-SdkVersion {
+    param([string]$Root, [string]$RequestedVersion)
+
+    if (-not [string]::IsNullOrWhiteSpace($RequestedVersion)) {
+        return $RequestedVersion.Trim()
+    }
+
+    $sdkVersionPath = Join-Path (Split-Path -Parent $Root) "WKOpenVR.FaceTracking.Sdk\version.txt"
+    if (Test-Path -LiteralPath $sdkVersionPath) {
+        $resolved = [System.IO.File]::ReadAllText($sdkVersionPath).Trim()
+        if (-not [string]::IsNullOrWhiteSpace($resolved)) {
+            return $resolved
+        }
+    }
+
+    $ownVersionPath = Join-Path $Root "version.txt"
+    if (Test-Path -LiteralPath $ownVersionPath) {
+        $resolved = [System.IO.File]::ReadAllText($ownVersionPath).Trim()
+        if (-not [string]::IsNullOrWhiteSpace($resolved)) {
+            return $resolved
+        }
+    }
+
+    throw "SdkVersion is empty and no sibling SDK version.txt was found."
+}
+
 $versionPath = Join-Path $root "version.txt"
 if (-not [string]::IsNullOrWhiteSpace($Version)) {
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -16,9 +44,12 @@ $version = [System.IO.File]::ReadAllText($versionPath).Trim()
 if ([string]::IsNullOrWhiteSpace($version)) {
     throw "version.txt is empty"
 }
+$SdkVersion = Resolve-SdkVersion -Root $root -RequestedVersion $SdkVersion
 if ([string]::IsNullOrWhiteSpace($SdkVersion)) {
     throw "SdkVersion is empty"
 }
+Write-Host "Package version: $version"
+Write-Host "SDK version: $SdkVersion"
 $project = Join-Path $root "src\WKOpenVR.SyntheticFaceModule\WKOpenVR.SyntheticFaceModule.csproj"
 $artifacts = Join-Path $root "artifacts"
 $publishDir = Join-Path $artifacts "publish"
@@ -27,6 +58,12 @@ $assembliesDir = Join-Path $stageDir "assemblies"
 $packageDir = Join-Path $artifacts "packages"
 $payload = Join-Path $packageDir ("WKOpenVR.SyntheticFaceModule." + $version + ".zip")
 $registryManifest = Join-Path $packageDir ("WKOpenVR.SyntheticFaceModule." + $version + ".manifest.json")
+$releaseTag = "v" + $version
+$payloadName = [System.IO.Path]::GetFileName($payload)
+$releaseUrl = "https://github.com/RealWhyKnot/WKOpenVR.SyntheticFaceModule/releases/tag/" + $releaseTag
+$payloadUrl = "https://github.com/RealWhyKnot/WKOpenVR.SyntheticFaceModule/releases/download/" + $releaseTag + "/" + $payloadName
+$isPrerelease = $version.Contains("-")
+$releaseChannel = if ($isPrerelease) { "beta" } else { "stable" }
 
 if (Test-Path $publishDir) { Remove-Item -Recurse -Force -LiteralPath $publishDir }
 if (Test-Path $stageDir) { Remove-Item -Recurse -Force -LiteralPath $stageDir }
@@ -44,7 +81,7 @@ $manifest = [ordered]@{
     uuid = "4df7850f-1d75-4665-9eab-6f07e0f3b5dc"
     name = "WKOpenVR Synthetic Face Module"
     vendor = "WhyKnot"
-    homepage = "https://github.com/whyknotdev/WKOpenVR.SyntheticFaceModule"
+    homepage = "https://github.com/RealWhyKnot/WKOpenVR.SyntheticFaceModule"
     license = "GPL-3.0-only"
     version = $version
     sdk_version = $SdkVersion
@@ -58,6 +95,11 @@ $manifest = [ordered]@{
     entry_assembly = "WKOpenVR.SyntheticFaceModule.dll"
     entry_type = "WKOpenVR.SyntheticFaceModule.SyntheticFaceModule"
     dependencies = @()
+    release_tag = $releaseTag
+    release_url = $releaseUrl
+    release_channel = $releaseChannel
+    prerelease = $isPrerelease
+    payload_url = $payloadUrl
     payload_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
     payload_size = 0
 }
