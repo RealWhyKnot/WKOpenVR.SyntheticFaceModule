@@ -22,6 +22,21 @@ public sealed class MouthSolver
     private float _rounded;
     private float _fricative;
 
+    /// <summary>Diagnostics: the most recent solved jaw-open weight.</summary>
+    public float LastJawOpen { get; private set; }
+
+    /// <summary>Diagnostics: the most recent solved mouth-closed weight.</summary>
+    public float LastMouthClosed { get; private set; }
+
+    /// <summary>Diagnostics: smoothed broad-viseme group weights from the last solve.</summary>
+    public float LastOpenWeight => _open;
+
+    public float LastFrontWeight => _front;
+
+    public float LastRoundedWeight => _rounded;
+
+    public float LastFricativeWeight => _fricative;
+
     /// <summary>
     /// Fills <paramref name="expressions"/> (length 88) with mouth shapes for this frame.
     /// <paramref name="activity"/> is the VAD speech strength 0..1; <paramref name="intensity"/>
@@ -74,6 +89,9 @@ public sealed class MouthSolver
 
         Set(expressions, FaceExpression.MouthUpperUpRight, upperUp, intensity);
         Set(expressions, FaceExpression.MouthUpperUpLeft, upperUp, intensity);
+
+        LastJawOpen = expressions[(int)FaceExpression.JawOpen];
+        LastMouthClosed = expressions[(int)FaceExpression.MouthClosed];
     }
 
     public void Reset()
@@ -83,6 +101,8 @@ public sealed class MouthSolver
         _front = 0f;
         _rounded = 0f;
         _fricative = 0f;
+        LastJawOpen = 0f;
+        LastMouthClosed = 0f;
     }
 
     private static void Set(float[] expressions, FaceExpression expression, float value, float intensity)

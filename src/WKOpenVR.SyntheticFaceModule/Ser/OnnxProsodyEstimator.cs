@@ -1,5 +1,6 @@
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
+using WKOpenVR.FaceTracking.Sdk;
 using WKOpenVR.SyntheticFaceModule.Audio;
 using WKOpenVR.SyntheticFaceModule.Prosody;
 
@@ -19,7 +20,7 @@ public sealed class OnnxProsodyEstimator : IProsodyEstimator, IDisposable
     private readonly int _mfccCount;
     private readonly int _frameCount;
     private readonly double _intervalSeconds;
-    private readonly Action<string>? _log;
+    private readonly IFaceModuleLogger? _log;
 
     private readonly object _gate = new();
     private readonly float[] _rolling;
@@ -42,7 +43,7 @@ public sealed class OnnxProsodyEstimator : IProsodyEstimator, IDisposable
         int mfccCount = 13,
         int frameCount = 150,
         double intervalSeconds = 0.75,
-        Action<string>? log = null)
+        IFaceModuleLogger? log = null)
     {
         _modelPath = modelPath;
         _mfccCount = mfccCount;
@@ -124,7 +125,7 @@ public sealed class OnnxProsodyEstimator : IProsodyEstimator, IDisposable
         _triedLoad = true;
         if (string.IsNullOrWhiteSpace(_modelPath) || !File.Exists(_modelPath))
         {
-            _log?.Invoke("[synthetic/ser] no model file; quality tier falls back to heuristic.");
+            _log?.Info("[synthetic/ser] no model file; quality tier falls back to heuristic.");
             return;
         }
 
@@ -133,14 +134,19 @@ public sealed class OnnxProsodyEstimator : IProsodyEstimator, IDisposable
             _session = new InferenceSession(_modelPath);
             _inputName = _session.InputMetadata.Keys.FirstOrDefault();
             _available = _inputName is not null;
-            _log?.Invoke(_available
-                ? $"[synthetic/ser] loaded model {_modelPath}"
-                : "[synthetic/ser] model has no inputs; falling back to heuristic.");
+            if (_available)
+            {
+                _log?.Info($"[synthetic/ser] loaded model {_modelPath}");
+            }
+            else
+            {
+                _log?.Warn("[synthetic/ser] model has no inputs; falling back to heuristic.");
+            }
         }
         catch (Exception ex)
         {
             _available = false;
-            _log?.Invoke($"[synthetic/ser] failed to load model ({ex.Message}); falling back to heuristic.");
+            _log?.Warn($"[synthetic/ser] failed to load model ({ex.Message}); falling back to heuristic.");
         }
     }
 
@@ -215,7 +221,7 @@ public sealed class OnnxProsodyEstimator : IProsodyEstimator, IDisposable
         catch (Exception ex)
         {
             _available = false;
-            _log?.Invoke($"[synthetic/ser] inference error ({ex.Message}); falling back to heuristic.");
+            _log?.Warn($"[synthetic/ser] inference error ({ex.Message}); falling back to heuristic.");
         }
     }
 

@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <OutputType>Library</OutputType>
-    <WkOpenVrFaceSdkVersion Condition="'$(WkOpenVrFaceSdkVersion)' == ''">0.1.0</WkOpenVrFaceSdkVersion>
+    <WkOpenVrFaceSdkVersion Condition="'$(WkOpenVrFaceSdkVersion)' == ''">2026.6.7.1</WkOpenVrFaceSdkVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="WKOpenVR.FaceTracking.Sdk" Version="$(WkOpenVrFaceSdkVersion)" />

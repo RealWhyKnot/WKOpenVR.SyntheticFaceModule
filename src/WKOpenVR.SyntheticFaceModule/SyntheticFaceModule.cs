@@ -18,9 +18,15 @@ namespace WKOpenVR.SyntheticFaceModule;
 /// eyes. Layers are combined by a priority mixer. Configuration is read from a JSON file and
 /// hot-reloaded. The intensive ONNX emotion model is opt-in behind the quality tier; everything else
 /// is lightweight and always-on. Eyes are off by default so VRChat's native idle eyes run.
+///
+/// Diagnostics: at Debug the module emits a periodic per-stage snapshot plus state transitions; at
+/// Trace it emits the same snapshot every frame (a firehose for deep diagnosis). Both are gated by
+/// the logger so they cost nothing when the host is not verbose.
 /// </summary>
 public sealed class SyntheticFaceModule : IFaceTrackingModule, IDisposable
 {
+    private const double DiagnosticIntervalSeconds = 0.5;
+
     private readonly IAudioAnalysisSource? _injectedSource;
     private readonly Random _rng;
     private readonly bool _configIsFixed;
@@ -39,12 +45,14 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IDisposable
     private IAudioAnalysisSource? _source;
     private IProsodyEstimator? _prosody;
     private ProceduralEyes? _eyes;
-    private Action<string>? _log;
+    private IFaceModuleLogger _log = NullFaceModuleLogger.Instance;
 
     private bool _expressionAllowed;
     private bool _eyeAllowed;
     private bool _active;
     private double _lastUpdateSeconds;
+    private double _diagAccumSeconds;
+    private bool _lastSpeech;
 
     public SyntheticFaceModule()
     {
@@ -76,11 +84,12 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IDisposable
         FaceModuleInitRequest request,
         CancellationToken cancellationToken)
     {
-        _log = context.Log;
+        _log = context.Logger;
 
         if (!_configIsFixed)
         {
             _configLoader = new SyntheticConfigLoader(context.ConfigDirectory, _log);
+            _configLoader.WriteDefaultIfMissing();
             _configLoader.LoadNow();
             _config = _configLoader.Current;
         }
@@ -107,10 +116,17 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IDisposable
 
             _clock.Restart();
             _lastUpdateSeconds = 0;
+            _diagAccumSeconds = 0;
         }
 
-        _log?.Invoke($"[synthetic] init: mouth={_config.DriveMouth} emotion={_config.DriveEmotion} " +
-                     $"eyes={_config.DriveEyes} quality={_config.QualityMode}");
+        string mic = string.IsNullOrEmpty(_config.MicDeviceName)
+            ? _config.MicDeviceNumber.ToString()
+            : $"{_config.MicDeviceNumber}/{_config.MicDeviceName}";
+        _log.Info(
+            $"[synthetic] init mouth={_config.DriveMouth} emotion={_config.DriveEmotion} eyes={_config.DriveEyes} " +
+            $"quality={_config.QualityMode} emoIntensity={_config.EmotionIntensity:F2} mouthIntensity={_config.MouthIntensity:F2} " +
+            $"mic={mic} sdkAbi={FaceModuleAbi.Version} sdk={FaceModuleAbi.SdkVersion} " +
+            $"config={_configLoader?.LoadedPath ?? "(programmatic)"}");
 
         return ValueTask.FromResult(new FaceModuleInitResult(
             EyeActive: wantEyes,
@@ -133,6 +149,9 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IDisposable
         if (_configLoader is not null && _configLoader.Poll(now))
         {
             _config = _configLoader.Current;
+            _log.Info(
+                $"[synthetic] config reloaded mouth={_config.DriveMouth} emotion={_config.DriveEmotion} " +
+                $"eyes={_config.DriveEyes} quality={_config.QualityMode}");
         }
 
         bool driveMouth = _expressionAllowed && _config.DriveMouth;
@@ -184,6 +203,8 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IDisposable
             eyes);
 
         FaceFrameValidator.Sanitize(frame);
+
+        LogDiagnostics(dt, audio, activity, isSpeech, prosody, eyes);
         return ValueTask.CompletedTask;
     }
 
@@ -205,6 +226,53 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IDisposable
 
         var model = new OnnxProsodyEstimator(config.EmotionModelPath, log: _log);
         return new CrossfadeProsodyEstimator(heuristic, model);
+    }
+
+    private void LogDiagnostics(float dt, AudioAnalysisFrame? audio, float activity, bool isSpeech, in ProsodyState prosody, in EyeOutput? eyes)
+    {
+        if (isSpeech != _lastSpeech)
+        {
+            _lastSpeech = isSpeech;
+            _log.Debug($"[synthetic] speech {(isSpeech ? "start" : "stop")} activity={activity:F2}");
+        }
+
+        bool trace = _log.IsEnabled(FaceModuleLogLevel.Trace);
+        _diagAccumSeconds += dt;
+        bool periodic = _diagAccumSeconds >= DiagnosticIntervalSeconds;
+        if (periodic)
+        {
+            _diagAccumSeconds = 0;
+        }
+
+        bool debug = periodic && _log.IsEnabled(FaceModuleLogLevel.Debug);
+        if (!trace && !debug)
+        {
+            return;
+        }
+
+        float rms = audio?.Rms ?? 0f;
+        float centroid = audio?.SpectralCentroidHz ?? 0f;
+        float pitch = audio?.PitchHz ?? 0f;
+        bool voiced = audio?.Voiced ?? false;
+        string eyeText = eyes is { } e
+            ? $"open={e.Openness:F2} gx={e.GazeX:F2} gy={e.GazeY:F2} pupil={e.PupilMm:F1}"
+            : "off";
+
+        string snapshot =
+            $"[synthetic/diag] dt={dt * 1000f:F1}ms rms={rms:F3} floor={_noiseFloor.Floor:F3} act={activity:F2} " +
+            $"speech={isSpeech} voiced={voiced} centroid={centroid:F0} pitch={pitch:F0} | " +
+            $"jaw={_mouth.LastJawOpen:F2} mclose={_mouth.LastMouthClosed:F2} open={_mouth.LastOpenWeight:F2} " +
+            $"front={_mouth.LastFrontWeight:F2} round={_mouth.LastRoundedWeight:F2} fric={_mouth.LastFricativeWeight:F2} | " +
+            $"arousal={prosody.Arousal:F2} valence={prosody.Valence:F2} conf={prosody.Confidence:F2} | eyes {eyeText}";
+
+        if (trace)
+        {
+            _log.Trace(snapshot);
+        }
+        else
+        {
+            _log.Debug(snapshot);
+        }
     }
 
     private void Shutdown()

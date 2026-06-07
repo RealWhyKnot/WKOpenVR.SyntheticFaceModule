@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using NAudio.Wave;
+using WKOpenVR.FaceTracking.Sdk;
 
 namespace WKOpenVR.SyntheticFaceModule.Audio;
 
@@ -20,7 +21,7 @@ public sealed class MicrophoneAudioSource : IAudioAnalysisSource
     private readonly float[] _ring;
     private readonly float[] _window;
     private readonly Stopwatch _clock = new();
-    private readonly Action<string>? _log;
+    private readonly IFaceModuleLogger? _log;
 
     private int _ringWrite;
     private int _ringFilled;
@@ -33,7 +34,7 @@ public sealed class MicrophoneAudioSource : IAudioAnalysisSource
         int fftSize = 512,
         int melCount = 26,
         int mfccCount = 13,
-        Action<string>? log = null)
+        IFaceModuleLogger? log = null)
     {
         _analyzer = new AudioAnalyzer(sampleRate, fftSize, melCount, mfccCount);
         _windowSize = fftSize;
@@ -95,7 +96,7 @@ public sealed class MicrophoneAudioSource : IAudioAnalysisSource
         _clock.Restart();
         _capture.StartRecording();
         _started = true;
-        _log?.Invoke($"[synthetic/mic] capture started (device={_capture.DeviceNumber}, {_capture.WaveFormat})");
+        _log?.Info($"[synthetic/mic] capture started (device={_capture.DeviceNumber}, {_capture.WaveFormat})");
     }
 
     public bool TryRead([NotNullWhen(true)] out AudioAnalysisFrame? frame)
@@ -174,7 +175,7 @@ public sealed class MicrophoneAudioSource : IAudioAnalysisSource
     {
         if (args.Exception is not null)
         {
-            _log?.Invoke($"[synthetic/mic] recording stopped with error: {args.Exception.Message}");
+            _log?.Warn($"[synthetic/mic] recording stopped with error: {args.Exception.Message}");
         }
     }
 }

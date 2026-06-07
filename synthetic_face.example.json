@@ -1,0 +1,33 @@
+{
+  // Microphone-driven mouth shapes (lip-sync). Turn off to stop driving the mouth.
+  "DriveMouth": true,
+
+  // Subtle prosody-driven expression coloring on brows/cheeks/mouth corners. Low intensity by
+  // design; it never overrides the lip-sync mouth shapes.
+  "DriveEmotion": true,
+
+  // Procedural blink + gaze. OFF by default so VRChat's own idle blink/auto-gaze runs. Turn on to
+  // drive the avatar's eye parameters from this module instead.
+  "DriveEyes": false,
+
+  // Quality tier: run a local ONNX speech-emotion model for better valence (requires
+  // EmotionModelPath). Heavier (CPU only); off by default. With no model present it transparently
+  // falls back to the always-on heuristic.
+  "QualityMode": false,
+
+  // Scales the emotion coloring amount: 0 disables it, 1 uses the full (already conservative) caps.
+  "EmotionIntensity": 1.0,
+
+  // Scales the mouth output amount. 1 is nominal.
+  "MouthIntensity": 1.0,
+
+  // Capture device index; -1 selects the system default capture device.
+  "MicDeviceNumber": -1,
+
+  // Optional: prefer the first capture device whose name contains this text (case-insensitive).
+  // Overrides MicDeviceNumber when a match is found.
+  "MicDeviceName": null,
+
+  // Optional: path to a license-clean ONNX speech-emotion model used when QualityMode is on.
+  "EmotionModelPath": null
+}

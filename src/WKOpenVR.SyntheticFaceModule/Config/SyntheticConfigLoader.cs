@@ -1,4 +1,5 @@
 using System.Text.Json;
+using WKOpenVR.FaceTracking.Sdk;
 
 namespace WKOpenVR.SyntheticFaceModule.Config;
 
@@ -11,23 +12,28 @@ namespace WKOpenVR.SyntheticFaceModule.Config;
 /// </summary>
 public sealed class SyntheticConfigLoader
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions ReadOptions = new()
     {
         PropertyNameCaseInsensitive = true,
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
     };
 
+    private static readonly JsonSerializerOptions WriteOptions = new()
+    {
+        WriteIndented = true,
+    };
+
     private readonly string _primaryPath;
     private readonly string _fallbackPath;
-    private readonly Action<string>? _log;
+    private readonly IFaceModuleLogger? _log;
     private readonly double _reloadThrottleSeconds;
 
     private double _lastCheckSeconds = double.NegativeInfinity;
     private string? _loadedPath;
     private DateTime _loadedStampUtc;
 
-    public SyntheticConfigLoader(string fallbackDirectory, Action<string>? log = null, double reloadThrottleSeconds = 1.0)
+    public SyntheticConfigLoader(string fallbackDirectory, IFaceModuleLogger? log = null, double reloadThrottleSeconds = 1.0)
     {
         _fallbackPath = Path.Combine(fallbackDirectory, "synthetic_face.json");
         _primaryPath = ResolvePrimaryPath();
@@ -39,22 +45,55 @@ public sealed class SyntheticConfigLoader
     /// <summary>The most recently loaded configuration (never null).</summary>
     public SyntheticConfig Current { get; private set; }
 
+    /// <summary>Stable per-user config path the loader prefers and writes defaults to.</summary>
+    public string PrimaryPath => _primaryPath;
+
+    /// <summary>The path the current config was loaded from, or null if defaults are in use.</summary>
+    public string? LoadedPath => _loadedPath;
+
+    /// <summary>
+    /// Writes a default config to the primary path if neither the primary nor fallback file exists,
+    /// so users have a discoverable, editable file. Best-effort; failures are logged, not thrown.
+    /// </summary>
+    public void WriteDefaultIfMissing()
+    {
+        if (File.Exists(_primaryPath) || File.Exists(_fallbackPath))
+        {
+            return;
+        }
+
+        try
+        {
+            string? dir = Path.GetDirectoryName(_primaryPath);
+            if (!string.IsNullOrEmpty(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            File.WriteAllText(_primaryPath, JsonSerializer.Serialize(new SyntheticConfig(), WriteOptions));
+            _log?.Info($"[synthetic/config] wrote default config to {_primaryPath}");
+        }
+        catch (Exception ex)
+        {
+            _log?.Warn($"[synthetic/config] could not write default config ({ex.Message}).");
+        }
+    }
+
     /// <summary>Force an immediate (re)load from disk regardless of the throttle.</summary>
     public void LoadNow()
     {
-        if (TryPickFile(out string path, out DateTime stampUtc) &&
-            TryReadConfig(path, out SyntheticConfig loaded))
+        if (TryPickFile(out string path, out DateTime stampUtc) && TryReadConfig(path, out SyntheticConfig loaded))
         {
             Current = loaded;
             _loadedPath = path;
             _loadedStampUtc = stampUtc;
-            _log?.Invoke($"[synthetic/config] loaded {path}");
+            _log?.Info($"[synthetic/config] loaded {path}");
         }
         else
         {
             Current = new SyntheticConfig();
             _loadedPath = null;
-            _log?.Invoke("[synthetic/config] using defaults (no config file)");
+            _log?.Info("[synthetic/config] using defaults (no config file)");
         }
     }
 
@@ -89,7 +128,7 @@ public sealed class SyntheticConfigLoader
         try
         {
             string json = File.ReadAllText(path);
-            SyntheticConfig? parsed = JsonSerializer.Deserialize<SyntheticConfig>(json, JsonOptions);
+            SyntheticConfig? parsed = JsonSerializer.Deserialize<SyntheticConfig>(json, ReadOptions);
             if (parsed is null)
             {
                 return false;

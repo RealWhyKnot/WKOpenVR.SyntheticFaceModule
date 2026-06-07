@@ -37,9 +37,6 @@ public sealed class SyntheticConfig
     /// <summary>Optional friendly device name to prefer when present (matched case-insensitively).</summary>
     public string? MicDeviceName { get; set; }
 
-    /// <summary>Manual mouth timing offset in milliseconds (audio/device/OSC paths vary).</summary>
-    public float MouthDelayMs { get; set; }
-
     /// <summary>
     /// Optional path to a license-clean ONNX speech-emotion model. When absent, the quality tier
     /// falls back to the heuristic estimator (no weights are bundled).
