@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Pre-push guard: run the repo lint (dotnet build -warnaserror) so build warnings
+# never reach CI. Skips gracefully when PowerShell or .NET is not installed.
+# Bypass in an emergency: git push --no-verify
+set -uo pipefail
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+[ -f "$repo_root/lint.ps1" ] || exit 0
+
+pwsh_bin=""
+for c in pwsh pwsh.exe powershell.exe powershell; do
+  if command -v "$c" >/dev/null 2>&1; then pwsh_bin="$c"; break; fi
+done
+if [ -z "$pwsh_bin" ]; then
+  echo "pre-push: PowerShell not found; skipping lint." >&2
+  exit 0
+fi
+if ! command -v dotnet >/dev/null 2>&1; then
+  echo "pre-push: dotnet not found; skipping lint." >&2
+  exit 0
+fi
+
+echo "pre-push: running lint.ps1 (dotnet build -warnaserror)..." >&2
+"$pwsh_bin" -NoProfile -ExecutionPolicy Bypass -File "$repo_root/lint.ps1"
+if [ "$?" -ne 0 ]; then
+  echo "pre-push BLOCKED: lint failed (build warnings/errors). Fix, then push. Bypass: git push --no-verify" >&2
+  exit 1
+fi
+exit 0
