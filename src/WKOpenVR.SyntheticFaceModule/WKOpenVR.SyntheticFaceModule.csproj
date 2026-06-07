@@ -10,5 +10,7 @@
   <ItemGroup>
     <PackageReference Include="WKOpenVR.FaceTracking.Sdk" Version="$(WkOpenVrFaceSdkVersion)" />
     <PackageReference Include="NAudio" Version="2.2.1" />
+    <!-- Quality-tier speech-emotion inference. Runtime is MIT; no model weights are bundled. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
   </ItemGroup>
 </Project>

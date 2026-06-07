@@ -76,6 +76,15 @@ Get-ChildItem -Path $publishDir -File | ForEach-Object {
     Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $assembliesDir $_.Name) -Force
 }
 
+# ONNX Runtime ships its native DLLs under runtimes/<rid>/native. The module assembly loader resolves
+# unmanaged DLLs flat from the module directory, so copy the win-x64 natives next to the assemblies.
+$nativeDir = Join-Path $publishDir "runtimes\win-x64\native"
+if (Test-Path -LiteralPath $nativeDir) {
+    Get-ChildItem -Path $nativeDir -File -Filter *.dll | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $assembliesDir $_.Name) -Force
+    }
+}
+
 $manifest = [ordered]@{
     schema = 1
     uuid = "4df7850f-1d75-4665-9eab-6f07e0f3b5dc"
@@ -87,7 +96,7 @@ $manifest = [ordered]@{
     sdk_version = $SdkVersion
     min_host_version = "1.0"
     supported_hmds = @("*")
-    capabilities = @("expression", "audio")
+    capabilities = @("expression", "audio", "eye")
     platforms = @("windows-x64")
     module_kind = "wkopenvr-native"
     module_api = "WKOpenVR.FaceTracking.Sdk/" + $SdkVersion
