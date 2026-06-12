@@ -204,7 +204,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IDisposable
 
         FaceFrameValidator.Sanitize(frame);
 
-        LogDiagnostics(dt, audio, activity, isSpeech, prosody, eyes);
+        LogDiagnostics(dt, audio, activity, isSpeech, prosody, eyes, frame);
         return ValueTask.CompletedTask;
     }
 
@@ -228,7 +228,14 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IDisposable
         return new CrossfadeProsodyEstimator(heuristic, model);
     }
 
-    private void LogDiagnostics(float dt, AudioAnalysisFrame? audio, float activity, bool isSpeech, in ProsodyState prosody, in EyeOutput? eyes)
+    private void LogDiagnostics(
+        float dt,
+        AudioAnalysisFrame? audio,
+        float activity,
+        bool isSpeech,
+        in ProsodyState prosody,
+        in EyeOutput? eyes,
+        FaceFrame frame)
     {
         if (isSpeech != _lastSpeech)
         {
@@ -263,7 +270,8 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IDisposable
             $"speech={isSpeech} voiced={voiced} centroid={centroid:F0} pitch={pitch:F0} | " +
             $"jaw={_mouth.LastJawOpen:F2} mclose={_mouth.LastMouthClosed:F2} open={_mouth.LastOpenWeight:F2} " +
             $"front={_mouth.LastFrontWeight:F2} round={_mouth.LastRoundedWeight:F2} fric={_mouth.LastFricativeWeight:F2} | " +
-            $"arousal={prosody.Arousal:F2} valence={prosody.Valence:F2} conf={prosody.Confidence:F2} | eyes {eyeText}";
+            $"arousal={prosody.Arousal:F2} valence={prosody.Valence:F2} conf={prosody.Confidence:F2} | " +
+            $"top={TopExpressions(frame.Expressions, 5)} | eyes {eyeText}";
 
         if (trace)
         {
@@ -273,6 +281,60 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IDisposable
         {
             _log.Debug(snapshot);
         }
+    }
+
+    private static string TopExpressions(float[] expressions, int count)
+    {
+        Span<int> topIndices = stackalloc int[count];
+        Span<float> topValues = stackalloc float[count];
+        int used = 0;
+
+        for (int i = 0; i < expressions.Length; i++)
+        {
+            float value = expressions[i];
+            if (value <= 0.001f)
+            {
+                continue;
+            }
+
+            int insert = used;
+            while (insert > 0 && value > topValues[insert - 1])
+            {
+                insert--;
+            }
+
+            if (insert >= count)
+            {
+                continue;
+            }
+
+            int copyStart = Math.Min(used, count - 1);
+            for (int j = copyStart; j > insert; j--)
+            {
+                topIndices[j] = topIndices[j - 1];
+                topValues[j] = topValues[j - 1];
+            }
+
+            topIndices[insert] = i;
+            topValues[insert] = value;
+            if (used < count)
+            {
+                used++;
+            }
+        }
+
+        if (used == 0)
+        {
+            return "none";
+        }
+
+        var parts = new string[used];
+        for (int i = 0; i < used; i++)
+        {
+            parts[i] = $"{(FaceExpression)topIndices[i]}:{topValues[i]:F2}";
+        }
+
+        return string.Join(",", parts);
     }
 
     private void Shutdown()

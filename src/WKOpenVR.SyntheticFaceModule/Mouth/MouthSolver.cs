@@ -13,8 +13,10 @@ namespace WKOpenVR.SyntheticFaceModule.Mouth;
 public sealed class MouthSolver
 {
     private const float GroupSmoothingSeconds = 0.04f;
+    private const float MouthCloseCap = 0.35f;
 
     private readonly AsymmetricSmoother _jaw = new(attackSeconds: 0.02f, releaseSeconds: 0.09f);
+    private readonly AsymmetricSmoother _mouthClosed = new(attackSeconds: 0.015f, releaseSeconds: 0.05f);
     private readonly BroadVisemeClassifier _classifier = new();
 
     private float _open;
@@ -61,7 +63,8 @@ public sealed class MouthSolver
             1.0f);
 
         float jawOpen = jaw * openFactor;
-        float mouthClosed = Math.Clamp(1f - (jaw * 1.6f), 0f, 1f);
+        float closureCandidate = Math.Clamp(activity - (jaw * 1.8f), 0f, 1f);
+        float mouthClosed = _mouthClosed.Update(closureCandidate * MouthCloseCap, dtSeconds);
         float funnel = jaw * _rounded * 0.60f;
         float pucker = jaw * _rounded * 0.45f;
         float stretch = jaw * ((_front * 0.55f) + (_fricative * 0.35f));
@@ -97,6 +100,7 @@ public sealed class MouthSolver
     public void Reset()
     {
         _jaw.Reset();
+        _mouthClosed.Reset();
         _open = 0f;
         _front = 0f;
         _rounded = 0f;

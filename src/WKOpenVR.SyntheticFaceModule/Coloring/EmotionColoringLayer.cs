@@ -5,9 +5,9 @@ namespace WKOpenVR.SyntheticFaceModule.Coloring;
 
 /// <summary>
 /// Maps a <see cref="ProsodyState"/> to low-amplitude, additive expression coloring on brows,
-/// cheeks, mouth corners, and eye squint/wide. Deliberately subtle: hard per-shape caps, confidence
+/// cheeks, and eye squint/wide. Deliberately subtle: hard per-shape caps, confidence
 /// gating, neutral bias, and fast-attack/slow-decay smoothing so a wrong guess never looks uncanny.
-/// It only writes "coloring" shapes - never the viseme-critical jaw/lip shapes the mouth solver owns.
+/// It never writes mouth shapes; the mouth solver owns every lip and jaw output.
 /// </summary>
 public sealed class EmotionColoringLayer
 {
@@ -17,14 +17,10 @@ public sealed class EmotionColoringLayer
 
     private static readonly FaceExpression[] ColoredShapes =
     {
-        FaceExpression.MouthCornerPullRight,
-        FaceExpression.MouthCornerPullLeft,
         FaceExpression.CheekSquintRight,
         FaceExpression.CheekSquintLeft,
         FaceExpression.EyeSquintRight,
         FaceExpression.EyeSquintLeft,
-        FaceExpression.MouthFrownRight,
-        FaceExpression.MouthFrownLeft,
         FaceExpression.BrowInnerUpRight,
         FaceExpression.BrowInnerUpLeft,
         FaceExpression.BrowOuterUpRight,
@@ -33,8 +29,6 @@ public sealed class EmotionColoringLayer
         FaceExpression.EyeWideLeft,
         FaceExpression.BrowLowererRight,
         FaceExpression.BrowLowererLeft,
-        FaceExpression.MouthPressRight,
-        FaceExpression.MouthPressLeft,
     };
 
     private readonly float[] _smoothed = new float[FaceExpressionCount.Value];
@@ -56,15 +50,11 @@ public sealed class EmotionColoringLayer
         float negative = Math.Clamp(-v, 0f, 1f);
         float arousalHigh = Math.Clamp((a - 0.5f) * 2f, 0f, 1f);
 
-        SetTarget(FaceExpression.MouthCornerPullRight, gate * positive * 0.30f);
-        SetTarget(FaceExpression.MouthCornerPullLeft, gate * positive * 0.30f);
         SetTarget(FaceExpression.CheekSquintRight, gate * positive * 0.18f);
         SetTarget(FaceExpression.CheekSquintLeft, gate * positive * 0.18f);
         SetTarget(FaceExpression.EyeSquintRight, gate * positive * 0.12f);
         SetTarget(FaceExpression.EyeSquintLeft, gate * positive * 0.12f);
 
-        SetTarget(FaceExpression.MouthFrownRight, gate * negative * 0.22f);
-        SetTarget(FaceExpression.MouthFrownLeft, gate * negative * 0.22f);
         SetTarget(FaceExpression.BrowInnerUpRight, gate * negative * 0.18f);
         SetTarget(FaceExpression.BrowInnerUpLeft, gate * negative * 0.18f);
 
@@ -75,8 +65,6 @@ public sealed class EmotionColoringLayer
 
         SetTarget(FaceExpression.BrowLowererRight, gate * arousalHigh * negative * 0.18f);
         SetTarget(FaceExpression.BrowLowererLeft, gate * arousalHigh * negative * 0.18f);
-        SetTarget(FaceExpression.MouthPressRight, gate * arousalHigh * negative * 0.15f);
-        SetTarget(FaceExpression.MouthPressLeft, gate * arousalHigh * negative * 0.15f);
 
         float attack = Coefficient(dtSeconds, AttackSeconds);
         float decay = Coefficient(dtSeconds, DecaySeconds);

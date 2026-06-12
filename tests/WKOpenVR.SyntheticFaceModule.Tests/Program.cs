@@ -21,10 +21,11 @@ var tests = new (string Name, Action Body)[]
     ("VAD ignores low-level noise", VadIgnoresLowLevelNoise),
     ("VAD opens on loud signal", VadOpensOnLoudSignal),
     ("Asymmetric smoother attack faster than release", SmootherAttackFasterThanRelease),
-    ("Mouth closes on silence", MouthClosesOnSilence),
+    ("Mouth is neutral on silence", MouthNeutralOnSilence),
     ("Mouth opens on loud vowel", MouthOpensOnLoudVowel),
+    ("Mouth close does not fight open speech", MouthCloseDoesNotFightOpenSpeech),
     ("Mouth rounded vs front mapping", MouthRoundedVsFrontMapping),
-    ("Emotion coloring respects caps and avoids mouth core", EmotionColoringCapsAndCore),
+    ("Emotion coloring respects caps and avoids mouth shapes", EmotionColoringCapsAndMouth),
     ("Emotion coloring suppressed at low confidence", EmotionColoringSuppressedLowConfidence),
     ("Mixer composes mouth and emotion", MixerComposesMouthAndEmotion),
     ("Mixer omits eye flag when no eyes", MixerOmitsEyeFlag),
@@ -147,7 +148,7 @@ static void SmootherAttackFasterThanRelease()
 
 // ---- Mouth ----
 
-static void MouthClosesOnSilence()
+static void MouthNeutralOnSilence()
 {
     var solver = new MouthSolver();
     var expr = new float[FaceExpressionCount.Value];
@@ -158,7 +159,7 @@ static void MouthClosesOnSilence()
     }
 
     AssertTrue(expr[(int)FaceExpression.JawOpen] < 0.05f);
-    AssertTrue(expr[(int)FaceExpression.MouthClosed] > 0.8f);
+    AssertTrue(expr[(int)FaceExpression.MouthClosed] < 0.05f);
 }
 
 static void MouthOpensOnLoudVowel()
@@ -172,6 +173,20 @@ static void MouthOpensOnLoudVowel()
     }
 
     AssertTrue(expr[(int)FaceExpression.JawOpen] > 0.3f);
+}
+
+static void MouthCloseDoesNotFightOpenSpeech()
+{
+    var solver = new MouthSolver();
+    var expr = new float[FaceExpressionCount.Value];
+    var vowel = MakeVoiceFrame(rms: 0.3f, centroid: 1416f);
+    for (int i = 0; i < 40; i++)
+    {
+        solver.Solve(vowel, activity: 1f, dtSeconds: 0.02f, intensity: 1f, expr);
+    }
+
+    AssertTrue(expr[(int)FaceExpression.JawOpen] > 0.3f);
+    AssertTrue(expr[(int)FaceExpression.MouthClosed] < 0.05f);
 }
 
 static void MouthRoundedVsFrontMapping()
@@ -196,7 +211,7 @@ static void MouthRoundedVsFrontMapping()
 
 // ---- Emotion coloring ----
 
-static void EmotionColoringCapsAndCore()
+static void EmotionColoringCapsAndMouth()
 {
     var layer = new EmotionColoringLayer();
     var offsets = new float[FaceExpressionCount.Value];
@@ -206,12 +221,15 @@ static void EmotionColoringCapsAndCore()
         layer.Apply(prosody, intensity: 1f, dtSeconds: 0.02f, offsets);
     }
 
-    AssertTrue(offsets[(int)FaceExpression.MouthCornerPullRight] > 0f);
-    AssertTrue(offsets[(int)FaceExpression.MouthCornerPullRight] <= 0.31f);
-    // Emotion must never touch viseme-critical mouth shapes.
+    AssertTrue(offsets[(int)FaceExpression.CheekSquintRight] > 0f);
+    AssertTrue(offsets[(int)FaceExpression.CheekSquintRight] <= 0.19f);
+    // Emotion must never touch mouth shapes; the audio mouth solver is the sole owner.
     AssertEqual(0f, offsets[(int)FaceExpression.JawOpen]);
     AssertEqual(0f, offsets[(int)FaceExpression.MouthClosed]);
     AssertEqual(0f, offsets[(int)FaceExpression.LipFunnelUpperRight]);
+    AssertEqual(0f, offsets[(int)FaceExpression.MouthCornerPullRight]);
+    AssertEqual(0f, offsets[(int)FaceExpression.MouthFrownRight]);
+    AssertEqual(0f, offsets[(int)FaceExpression.MouthPressRight]);
 }
 
 static void EmotionColoringSuppressedLowConfidence()
