@@ -45,6 +45,7 @@ jobs:
         run: |
           ./.github/scripts/Test-WorkflowSyntax.ps1
           ./.github/scripts/Test-NightlyBetaPlan.ps1
+          ./.github/scripts/Test-GenerateReleaseNotes.ps1
 
       - name: Cache NuGet packages
         uses: actions/cache@v5
@@ -75,6 +76,7 @@ jobs:
         working-directory: WKOpenVR.SyntheticFaceModule
         env:
           TAG_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
           INPUT_VERSION: ${{ inputs.version }}
         run: |
           $version = $env:INPUT_VERSION
@@ -95,25 +97,22 @@ jobs:
           if (-not (Test-Path -LiteralPath $payload)) { throw "Expected payload missing: $payload" }
           if (-not (Test-Path -LiteralPath $manifest)) { throw "Expected manifest missing: $manifest" }
 
-          $payloadSha = (Get-FileHash -LiteralPath $payload -Algorithm SHA256).Hash.ToLowerInvariant()
-          $manifestSha = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
-          $notes = @(
-            "WKOpenVR synthetic native face module package.",
-            "",
-            "Attach this module zip to a WKOpenVR native module registry entry, or install it through a registry source that points at this release asset.",
-            "",
-            "Checksums:",
-            "$(Split-Path -Leaf $payload) sha256=$payloadSha",
-            "$(Split-Path -Leaf $manifest) sha256=$manifestSha"
-          ) -join "`n"
-          $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
-          [System.IO.File]::WriteAllText($notesPath, $notes, (New-Object System.Text.UTF8Encoding($false)))
-
           $isBeta = $version -match '-beta$'
           $tag = $env:TAG_NAME
           if ($env:REF_TYPE -ne "tag") {
             $tag = "v$version"
           }
+          $artifactPaths = [string[]]@($payload, $manifest)
+          $notesOutput = & .\.github\scripts\Generate-ReleaseNotes.ps1 `
+            -Tag $tag `
+            -Repo '${{ github.repository }}' `
+            -PackageName 'WKOpenVR Synthetic Face Module' `
+            -ArtifactPath $artifactPaths
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $notes = ($notesOutput -join [System.Environment]::NewLine) + [System.Environment]::NewLine
+          $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
+          [System.IO.File]::WriteAllText($notesPath, $notes, (New-Object System.Text.UTF8Encoding($false)))
+
           "version=$version" >> $env:GITHUB_OUTPUT
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "notes_path=$notesPath" >> $env:GITHUB_OUTPUT
