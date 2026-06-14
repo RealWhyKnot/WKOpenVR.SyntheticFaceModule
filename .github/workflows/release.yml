@@ -17,7 +17,7 @@ permissions:
 jobs:
   package:
     name: package
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     timeout-minutes: 25
 
     steps:
@@ -38,6 +38,13 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
+
+      - name: Validate workflow scripts
+        shell: pwsh
+        working-directory: WKOpenVR.SyntheticFaceModule
+        run: |
+          ./.github/scripts/Test-WorkflowSyntax.ps1
+          ./.github/scripts/Test-NightlyBetaPlan.ps1
 
       - name: Cache NuGet packages
         uses: actions/cache@v5
@@ -120,6 +127,60 @@ jobs:
             WKOpenVR.SyntheticFaceModule/artifacts/packages/*.zip
             WKOpenVR.SyntheticFaceModule/artifacts/packages/*.manifest.json
           if-no-files-found: error
+
+      - name: Checkout module registry
+        if: ${{ steps.package.outputs.is_beta == 'true' }}
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.repository_owner }}/wkopenvr-module-registry
+          token: ${{ secrets.MIRROR_RELEASE_TOKEN }}
+          fetch-depth: 0
+          path: wkopenvr-module-registry
+
+      - name: Publish beta package to module registry
+        if: ${{ steps.package.outputs.is_beta == 'true' }}
+        shell: pwsh
+        working-directory: wkopenvr-module-registry
+        env:
+          REGISTRY_TOKEN: ${{ secrets.MIRROR_RELEASE_TOKEN }}
+          VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:REGISTRY_TOKEN)) {
+            throw "MIRROR_RELEASE_TOKEN secret is required to publish beta packages to the module registry."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:VERSION)) {
+            throw "Package version is empty."
+          }
+
+          $workspace = Split-Path -Parent (Get-Location).Path
+          $packageDir = Join-Path $workspace "WKOpenVR.SyntheticFaceModule\artifacts\packages"
+          $payload = Join-Path $packageDir ("WKOpenVR.SyntheticFaceModule." + $env:VERSION + ".zip")
+          $manifest = Join-Path $packageDir ("WKOpenVR.SyntheticFaceModule." + $env:VERSION + ".manifest.json")
+          if (-not (Test-Path -LiteralPath $payload)) { throw "Expected payload missing: $payload" }
+          if (-not (Test-Path -LiteralPath $manifest)) { throw "Expected manifest missing: $manifest" }
+
+          python .\scripts\import_synthetic_release.py --payload $payload --manifest $manifest --beta
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\test.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\lint.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add v1
+          git diff --cached --quiet
+          $diffCode = $LASTEXITCODE
+          if ($diffCode -eq 0) {
+            Write-Host "Registry already contains WKOpenVR.SyntheticFaceModule $env:VERSION."
+          } elseif ($diffCode -eq 1) {
+            git commit -m "feat(registry): publish synthetic face module $env:VERSION"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            git push origin HEAD:main
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } else {
+            throw "git diff --cached failed with exit code $diffCode"
+          }
 
       - name: Publish GitHub release
         shell: pwsh

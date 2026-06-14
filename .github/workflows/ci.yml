@@ -12,7 +12,7 @@ permissions:
 jobs:
   build:
     name: build + test
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     timeout-minutes: 25
 
     steps:
@@ -34,6 +34,13 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
+
+      - name: Validate workflow scripts
+        shell: pwsh
+        working-directory: WKOpenVR.SyntheticFaceModule
+        run: |
+          ./.github/scripts/Test-WorkflowSyntax.ps1
+          ./.github/scripts/Test-NightlyBetaPlan.ps1
 
       - name: Cache NuGet packages
         uses: actions/cache@v5
