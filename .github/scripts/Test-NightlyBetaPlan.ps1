@@ -98,6 +98,15 @@ try {
     $plan = Invoke-Plan -RepoRoot $repo -Today "2026.6.9"
     Assert-Equal -Actual $plan.next_tag -Expected "v2026.6.9.2-beta" -Message "Same-day beta tags should increment"
 
+    $repo = New-TestRepo
+    [void]$tempRoots.Add($repo)
+    Invoke-TestGit -RepoRoot $repo -Arguments @("tag", "v2026.6.9.0") | Out-Null
+    Write-TestFile -Path (Join-Path $repo "src\package.txt") -Content "changed after stable release`n"
+    Invoke-TestGit -RepoRoot $repo -Arguments @("add", ".") | Out-Null
+    Invoke-TestGit -RepoRoot $repo -Arguments @("commit", "-q", "-m", "change after stable release") | Out-Null
+    $plan = Invoke-Plan -RepoRoot $repo -Today "2026.6.9"
+    Assert-Equal -Actual $plan.next_tag -Expected "v2026.6.9.1-beta" -Message "Same-day beta tags should increment after a stable release"
+
     $failed = $false
     try {
         Invoke-Plan -RepoRoot $repo -Tag "v2026.6.9.0-beta.1" | Out-Null

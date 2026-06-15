@@ -45,7 +45,22 @@ jobs:
         run: |
           ./.github/scripts/Test-WorkflowSyntax.ps1
           ./.github/scripts/Test-NightlyBetaPlan.ps1
+          ./.github/scripts/Test-ReleaseVersionSequence.ps1
           ./.github/scripts/Test-GenerateReleaseNotes.ps1
+
+      - name: Validate release version sequence
+        shell: pwsh
+        working-directory: WKOpenVR.SyntheticFaceModule
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          $version = $env:INPUT_VERSION
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            $version = $env:TAG_NAME -replace '^v', ''
+          }
+          if ([string]::IsNullOrWhiteSpace($version)) { throw "Release version is empty." }
+          ./.github/scripts/Assert-ReleaseVersionSequence.ps1 -Tag "v$version"
 
       - name: Cache NuGet packages
         uses: actions/cache@v5

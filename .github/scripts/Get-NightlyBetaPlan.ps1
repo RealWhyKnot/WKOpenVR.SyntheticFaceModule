@@ -85,9 +85,9 @@ function Get-NextBetaTag {
     }
 
     $escaped = [regex]::Escape($DateStamp)
-    $pattern = "^v$escaped\.(\d+)-beta$"
+    $pattern = "^v$escaped\.(\d+)(-[A-Za-z0-9]{4})?$"
     $highest = -1
-    foreach ($existing in @(Invoke-Git -Arguments @("tag", "--list", "v$DateStamp.*-beta"))) {
+    foreach ($existing in @(Invoke-Git -Arguments @("tag", "--list", "v$DateStamp.*"))) {
         if ($existing -match $pattern) {
             $value = [int]$Matches[1]
             if ($value -gt $highest) { $highest = $value }
