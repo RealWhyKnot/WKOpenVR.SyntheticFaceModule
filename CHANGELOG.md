@@ -10,6 +10,12 @@ _No notable changes since the last release._
 
 ---
 
+## v2026.6.15.0-beta -- 2026-06-15
+
+_Maintenance release; see commit log for details._
+
+---
+
 ## v2026.6.14.0-beta -- 2026-06-14
 
 ### Fixed
