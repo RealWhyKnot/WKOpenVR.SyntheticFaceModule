@@ -11,6 +11,7 @@ param(
     [string]   $TemplateDir = $null,
     [string]   $Extras = $null,
     [string[]] $ArtifactPath = @(),
+    [string]   $IntegrityName = $null,
     [switch]   $AllowEmpty,
     [switch]   $SkipScrub
 )
@@ -312,27 +313,21 @@ if ($commitData.Entries.Count -eq 0) {
     }
 }
 
-$artifactRows = New-Object System.Collections.Generic.List[string]
+$artifactCount = 0
 foreach ($artifact in $ArtifactPath) {
     if ([string]::IsNullOrWhiteSpace($artifact)) { continue }
     if (-not (Test-Path -LiteralPath $artifact)) {
         throw "Release artifact not found: $artifact"
     }
-    $item = Get-Item -LiteralPath $artifact
-    $sha = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-    $artifactRows.Add("| $($item.Name) | $(Format-Size -Bytes $item.Length) | ``$sha`` |") | Out-Null
+    $artifactCount++
 }
-if ($artifactRows.Count -gt 0) {
+if ($artifactCount -gt 0 -and -not [string]::IsNullOrWhiteSpace($IntegrityName)) {
     [void]$sb.AppendLine()
     [void]$sb.AppendLine("## File integrity")
     [void]$sb.AppendLine()
-    [void]$sb.AppendLine("Verify with ``Get-FileHash <file> -Algorithm SHA256`` on PowerShell.")
-    [void]$sb.AppendLine()
-    [void]$sb.AppendLine("| File | Size | SHA256 |")
-    [void]$sb.AppendLine("|---|---:|---|")
-    foreach ($row in $artifactRows) {
-        [void]$sb.AppendLine($row)
-    }
+    [void]$sb.AppendLine("Release SHA256 hashes are attached as ``$IntegrityName``.")
+} elseif ($artifactCount -gt 0) {
+    Write-Host "::warning::File-integrity section skipped: -IntegrityName must be set when release artifacts are provided."
 }
 
 foreach ($section in @("links", "install", "beta", "compatibility")) {

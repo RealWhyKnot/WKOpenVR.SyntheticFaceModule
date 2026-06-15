@@ -155,6 +155,18 @@ jobs:
           $manifest = "artifacts/packages/WKOpenVR.SyntheticFaceModule.$version.manifest.json"
           if (-not (Test-Path -LiteralPath $payload)) { throw "Expected payload missing: $payload" }
           if (-not (Test-Path -LiteralPath $manifest)) { throw "Expected manifest missing: $manifest" }
+          $payloadItem = Get-Item -LiteralPath $payload
+          $manifestItem = Get-Item -LiteralPath $manifest
+          $payloadSha = (Get-FileHash -LiteralPath $payloadItem.FullName -Algorithm SHA256).Hash.ToUpperInvariant()
+          $manifestSha = (Get-FileHash -LiteralPath $manifestItem.FullName -Algorithm SHA256).Hash.ToUpperInvariant()
+          $integrityName = "WKOpenVR.SyntheticFaceModule.$version.integrity.tsv"
+          $integrity = Join-Path "artifacts/packages" $integrityName
+          $integrityRows = @(
+            "path`tbytes`tsha256",
+            "$($payloadItem.Name)`t$($payloadItem.Length)`t$payloadSha",
+            "$($manifestItem.Name)`t$($manifestItem.Length)`t$manifestSha"
+          )
+          [System.IO.File]::WriteAllLines($integrity, [string[]]$integrityRows, [System.Text.UTF8Encoding]::new($false))
 
           $isBeta = $version -match '-beta$'
           $tag = $env:TAG_NAME
@@ -166,7 +178,8 @@ jobs:
             -Tag $tag `
             -Repo '${{ github.repository }}' `
             -PackageName 'WKOpenVR Synthetic Face Module' `
-            -ArtifactPath $artifactPaths
+            -ArtifactPath $artifactPaths `
+            -IntegrityName $integrityName
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $notes = ($notesOutput -join [System.Environment]::NewLine) + [System.Environment]::NewLine
           $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
@@ -184,6 +197,7 @@ jobs:
           path: |
             WKOpenVR.SyntheticFaceModule/artifacts/packages/*.zip
             WKOpenVR.SyntheticFaceModule/artifacts/packages/*.manifest.json
+            WKOpenVR.SyntheticFaceModule/artifacts/packages/*.integrity.tsv
           if-no-files-found: error
 
       - name: Checkout module registry
@@ -249,7 +263,7 @@ jobs:
           IS_BETA: ${{ steps.package.outputs.is_beta }}
           NOTES_PATH: ${{ steps.package.outputs.notes_path }}
         run: |
-          $assets = @(Get-ChildItem -Path "artifacts/packages" -Include "*.zip", "*.manifest.json" -Recurse | ForEach-Object { $_.FullName })
+          $assets = @(Get-ChildItem -Path "artifacts/packages" -Include "*.zip", "*.manifest.json", "*.integrity.tsv" -Recurse | ForEach-Object { $_.FullName })
           if ($assets.Count -eq 0) { throw "No release assets found." }
 
           $extra = @()

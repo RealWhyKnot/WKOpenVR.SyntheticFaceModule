@@ -45,7 +45,8 @@ function Invoke-Generator {
         -Repo "RealWhyKnot/WKOpenVR.SyntheticFaceModule" `
         -PackageName "WKOpenVR Synthetic Face Module" `
         -TemplateDir (Join-Path (Get-Location).Path ".github\release-template") `
-        -ArtifactPath $artifactPaths
+        -ArtifactPath $artifactPaths `
+        -IntegrityName "module.integrity.tsv"
     if ($LASTEXITCODE -ne 0) {
         throw "Generate-ReleaseNotes failed for $Tag"
     }
@@ -117,7 +118,8 @@ Built for WKOpenVR native face modules.
     Assert-Contains -Text $stableNotes -Expected "fix(module): tune mouth envelope"
     Assert-Contains -Text $stableNotes -Expected "ci(release): compose package notes"
     Assert-Contains -Text $stableNotes -Expected "compare/v2026.6.1.0...v2026.6.3.0"
-    Assert-Contains -Text $stableNotes -Expected "| module.zip |"
+    Assert-Contains -Text $stableNotes -Expected "module.integrity.tsv"
+    Assert-NotContains -Text $stableNotes -Unexpected "| module.zip |"
     Assert-NotContains -Text $stableNotes -Unexpected '$sha'
     Assert-Contains -Text $stableNotes -Expected "Install WKOpenVR Synthetic Face Module"
 
