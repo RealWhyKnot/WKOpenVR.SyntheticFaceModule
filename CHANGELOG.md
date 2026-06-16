@@ -6,6 +6,12 @@ The `release.yml` body for each tag is composed mechanically from the commit sli
 
 ## Unreleased
 
+_No notable changes since the last release._
+
+---
+
+## v2026.6.16.0-beta -- 2026-06-16
+
 ### Fixed
 - **release:** Use central date for release automation (f2ad8e4)
 
