@@ -6,7 +6,8 @@ The `release.yml` body for each tag is composed mechanically from the commit sli
 
 ## Unreleased
 
-_No notable changes since the last release._
+### Fixed
+- **release:** Use central date for release automation (f2ad8e4)
 
 ---
 
