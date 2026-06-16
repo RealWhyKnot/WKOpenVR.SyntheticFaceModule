@@ -51,7 +51,13 @@ function New-TestRepo {
 }
 
 function Invoke-Plan {
-    param([string] $RepoRoot, [string] $BaseTag = "v2026.6.1.0-beta", [string] $Tag = "", [string] $Today = "")
+    param(
+        [string] $RepoRoot,
+        [string] $BaseTag = "v2026.6.1.0-beta",
+        [string] $Tag = "",
+        [string] $Today = "",
+        [datetime] $NowUtc = ([datetime]::Parse("2026-06-16T01:30:00Z"))
+    )
 
     $outputPath = Join-Path $RepoRoot "plan.json"
     $arguments = @{
@@ -61,6 +67,7 @@ function Invoke-Plan {
     }
     if (-not [string]::IsNullOrWhiteSpace($Tag)) { $arguments["Tag"] = $Tag }
     if (-not [string]::IsNullOrWhiteSpace($Today)) { $arguments["Today"] = $Today }
+    $arguments["NowUtc"] = $NowUtc
 
     & $Planner @arguments | Out-Host
     if ($LASTEXITCODE -ne 0) {
@@ -106,6 +113,14 @@ try {
     Invoke-TestGit -RepoRoot $repo -Arguments @("commit", "-q", "-m", "change after stable release") | Out-Null
     $plan = Invoke-Plan -RepoRoot $repo -Today "2026.6.9"
     Assert-Equal -Actual $plan.next_tag -Expected "v2026.6.9.1-beta" -Message "Same-day beta tags should increment after a stable release"
+
+    $repo = New-TestRepo
+    [void]$tempRoots.Add($repo)
+    Write-TestFile -Path (Join-Path $repo "src\package.txt") -Content "changed after utc rollover`n"
+    Invoke-TestGit -RepoRoot $repo -Arguments @("add", ".") | Out-Null
+    Invoke-TestGit -RepoRoot $repo -Arguments @("commit", "-q", "-m", "change after utc rollover") | Out-Null
+    $plan = Invoke-Plan -RepoRoot $repo -NowUtc ([datetime]::Parse("2026-06-16T01:30:00Z"))
+    Assert-Equal -Actual $plan.next_tag -Expected "v2026.6.15.0-beta" -Message "Default beta tag date should use Central release date"
 
     $failed = $false
     try {

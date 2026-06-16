@@ -104,14 +104,14 @@ _No notable changes since the last release._
     $Notes = (& $Updater -Mode Notes -RepoRoot $TempRoot) -join "`n"
     Assert-Contains -Text $Notes -Expected '**package:** Test changelog append'
 
-    & $Updater -Mode Promote -Version 'v2026.6.4.0' -RepoRoot $TempRoot -Repo 'RealWhyKnot/WKOpenVR'
+    & $Updater -Mode Promote -Version 'v2026.6.4.0' -RepoRoot $TempRoot -Repo 'RealWhyKnot/WKOpenVR' -NowUtc ([datetime]::Parse('2026-06-16T01:30:00Z'))
     if ($LASTEXITCODE -ne 0) {
         throw "Update-Changelog Promote failed with exit code $LASTEXITCODE"
     }
 
     $Promoted = [System.IO.File]::ReadAllText((Join-Path $TempRoot 'CHANGELOG.md'), $Utf8NoBom)
     Assert-Contains -Text $Promoted -Expected '## Unreleased'
-    Assert-Contains -Text $Promoted -Expected '## v2026.6.4.0 -- '
+    Assert-Contains -Text $Promoted -Expected '## v2026.6.4.0 -- 2026-06-15'
 
     $VersionNotes = (& $Updater -Mode Notes -ForVersion -Version 'v2026.6.4.0' -RepoRoot $TempRoot) -join "`n"
     Assert-Contains -Text $VersionNotes -Expected '**package:** Test changelog append'

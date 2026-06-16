@@ -4,6 +4,7 @@ param(
     [string] $BaseTag = "",
     [string] $Tag = "",
     [string] $Today = "",
+    [datetime] $NowUtc = ([datetime]::UtcNow),
     [string] $OutputJsonPath = ""
 )
 
@@ -35,6 +36,25 @@ function Test-GitTagExists {
     if ([string]::IsNullOrWhiteSpace($Name)) { return $false }
     & git rev-parse --verify --quiet "refs/tags/$Name^{commit}" *> $null
     return ($LASTEXITCODE -eq 0)
+}
+
+function Get-CentralTimeZone {
+    foreach ($id in @("Central Standard Time", "America/Chicago")) {
+        try { return [System.TimeZoneInfo]::FindSystemTimeZoneById($id) }
+        catch { }
+    }
+    throw "Could not resolve the America/Chicago release time zone."
+}
+
+function Get-ReleaseDateStamp {
+    param([datetime] $NowUtc, [string] $Format)
+
+    $utc = $NowUtc
+    if ($utc.Kind -ne [System.DateTimeKind]::Utc) {
+        $utc = $utc.ToUniversalTime()
+    }
+    $central = [System.TimeZoneInfo]::ConvertTimeFromUtc($utc, (Get-CentralTimeZone))
+    return $central.ToString($Format, [System.Globalization.CultureInfo]::InvariantCulture)
 }
 
 function Get-LatestReleaseTag {
@@ -78,10 +98,13 @@ function Test-HasChangesSinceTag {
 }
 
 function Get-NextBetaTag {
-    param([string] $DateStamp)
+    param(
+        [string] $DateStamp,
+        [datetime] $CurrentUtc
+    )
 
     if ([string]::IsNullOrWhiteSpace($DateStamp)) {
-        $DateStamp = (Get-Date).ToUniversalTime().ToString("yyyy.M.d", [System.Globalization.CultureInfo]::InvariantCulture)
+        $DateStamp = Get-ReleaseDateStamp -NowUtc $CurrentUtc -Format "yyyy.M.d"
     }
 
     $escaped = [regex]::Escape($DateStamp)
@@ -113,7 +136,7 @@ try {
 
     $base = Get-LatestReleaseTag -Override $BaseTag
     $hasChanges = Test-HasChangesSinceTag -Name $base
-    $nextTag = if ([string]::IsNullOrWhiteSpace($Tag)) { Get-NextBetaTag -DateStamp $Today } else { $Tag }
+    $nextTag = if ([string]::IsNullOrWhiteSpace($Tag)) { Get-NextBetaTag -DateStamp $Today -CurrentUtc $NowUtc } else { $Tag }
 
     $plan = [pscustomobject]@{
         has_changes = $hasChanges
