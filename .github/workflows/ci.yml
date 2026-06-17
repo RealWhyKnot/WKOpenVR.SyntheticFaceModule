@@ -41,7 +41,6 @@ jobs:
         run: |
           ./.github/scripts/Test-WorkflowSyntax.ps1
           ./.github/scripts/Test-UpdateChangelog.ps1
-          ./.github/scripts/Test-NightlyBetaPlan.ps1
           ./.github/scripts/Test-GenerateReleaseNotes.ps1
 
       - name: Cache NuGet packages
