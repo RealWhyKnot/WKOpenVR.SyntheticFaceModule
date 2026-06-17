@@ -179,8 +179,7 @@ jobs:
             -Repo '${{ github.repository }}' `
             -PackageName 'WKOpenVR Synthetic Face Module' `
             -ArtifactPath $artifactPaths `
-            -IntegrityName $integrityName `
-            -AllowEmpty:$isBeta
+            -IntegrityName $integrityName
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $notes = ($notesOutput -join [System.Environment]::NewLine) + [System.Environment]::NewLine
           $notesPath = Join-Path $env:RUNNER_TEMP "release-notes.md"
