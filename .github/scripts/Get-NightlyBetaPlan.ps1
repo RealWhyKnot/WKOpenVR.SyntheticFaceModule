@@ -90,7 +90,7 @@ function Test-HasChangesSinceTag {
     if ([string]::IsNullOrWhiteSpace($Name)) { return $true }
     if (-not (Test-GitTagExists -Name $Name)) { return $true }
 
-    & git diff --quiet "$Name..HEAD" --
+    & git diff --quiet "$Name..HEAD" -- . ":(top,exclude)CHANGELOG.md"
     $code = $LASTEXITCODE
     if ($code -eq 0) { return $false }
     if ($code -eq 1) { return $true }

@@ -37,7 +37,10 @@ function Commit-TestChange {
 }
 
 function Invoke-Generator {
-    param([string] $Tag)
+    param(
+        [string] $Tag,
+        [switch] $AllowEmpty
+    )
 
     $artifactPaths = [string[]]@("artifacts\packages\module.zip", "artifacts\packages\module.manifest.json")
     $output = & $Generator `
@@ -46,7 +49,8 @@ function Invoke-Generator {
         -PackageName "WKOpenVR Synthetic Face Module" `
         -TemplateDir (Join-Path (Get-Location).Path ".github\release-template") `
         -ArtifactPath $artifactPaths `
-        -IntegrityName "module.integrity.tsv"
+        -IntegrityName "module.integrity.tsv" `
+        -AllowEmpty:$AllowEmpty
     if ($LASTEXITCODE -ne 0) {
         throw "Generate-ReleaseNotes failed for $Tag"
     }
@@ -132,6 +136,13 @@ Built for WKOpenVR native face modules.
     $dispatchNotes = Invoke-Generator -Tag "v2026.6.4.0-beta"
     Assert-Contains -Text $dispatchNotes -Expected "docs(release): document local package install"
     Assert-Contains -Text $dispatchNotes -Expected "compare/v2026.6.3.0...v2026.6.4.0-beta"
+    Invoke-Git tag -a v2026.6.4.0-beta -m "v2026.6.4.0-beta" | Out-Null
+
+    Commit-TestChange -Path "CHANGELOG.md" -Content "# Changelog`n" -Subject "docs(changelog): promote beta [skip changelog]"
+    Invoke-Git tag -a v2026.6.5.0-beta -m "v2026.6.5.0-beta" | Out-Null
+    $emptyBetaNotes = Invoke-Generator -Tag "v2026.6.5.0-beta" -AllowEmpty
+    Assert-Contains -Text $emptyBetaNotes -Expected "_Maintenance release; see commit log for details._"
+    Assert-NotContains -Text $emptyBetaNotes -Unexpected "Full changelog:"
 
     Write-Host "Generate-ReleaseNotes tests passed."
 }

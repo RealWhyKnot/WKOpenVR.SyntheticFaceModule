@@ -93,6 +93,14 @@ try {
 
     $repo = New-TestRepo
     [void]$tempRoots.Add($repo)
+    Write-TestFile -Path (Join-Path $repo "CHANGELOG.md") -Content "# Changelog`n"
+    Invoke-TestGit -RepoRoot $repo -Arguments @("add", ".") | Out-Null
+    Invoke-TestGit -RepoRoot $repo -Arguments @("commit", "-q", "-m", "docs(changelog): promote release") | Out-Null
+    $plan = Invoke-Plan -RepoRoot $repo
+    Assert-Equal -Actual $plan.has_changes -Expected $false -Message "Changelog-only changes should skip nightly beta tag creation"
+
+    $repo = New-TestRepo
+    [void]$tempRoots.Add($repo)
     Write-TestFile -Path (Join-Path $repo "src\package.txt") -Content "changed`n"
     Invoke-TestGit -RepoRoot $repo -Arguments @("add", ".") | Out-Null
     Invoke-TestGit -RepoRoot $repo -Arguments @("commit", "-q", "-m", "change package") | Out-Null
