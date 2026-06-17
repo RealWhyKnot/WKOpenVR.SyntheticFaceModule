@@ -6,7 +6,8 @@ The `release.yml` body for each tag is composed mechanically from the commit sli
 
 ## Unreleased
 
-_No notable changes since the last release._
+### Fixed
+- **release:** Tolerate empty beta release notes (a864ed8)
 
 ---
 
