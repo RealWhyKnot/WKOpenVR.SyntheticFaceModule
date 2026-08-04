@@ -9,6 +9,7 @@ The `release.yml` body for each tag is composed mechanically from the commit sli
 ### Added
 - **module:** Pace updates, report health, ship settings descriptor (9523aa2)
 - **module:** Add calibrated smile and frown channel on the mouth corners (9772305)
+- **module:** Add always-on idle micro-expression layer (47279ce)
 
 ---
 
