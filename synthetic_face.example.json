@@ -25,6 +25,10 @@
   // Scales the mouth output amount. 1 is nominal.
   "MouthIntensity": 1.0,
 
+  // Scales the always-on idle micro-motion (small brow/squint events while quiet).
+  // 0 disables it; 1 matches rates and amplitudes measured from real tracker recordings.
+  "IdleIntensity": 1.0,
+
   // Capture device index; -1 selects the system default capture device.
   "MicDeviceNumber": -1,
 

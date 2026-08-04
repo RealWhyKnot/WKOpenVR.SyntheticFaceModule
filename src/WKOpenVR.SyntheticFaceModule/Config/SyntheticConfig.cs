@@ -37,6 +37,12 @@ public sealed class SyntheticConfig
     /// <summary>Scales the mouth output. 1 = nominal.</summary>
     public float MouthIntensity { get; set; } = 1.0f;
 
+    /// <summary>
+    /// Scales the always-on idle micro-motion (small brow/squint events during quiet).
+    /// 0 disables it, 1 = amplitudes and rates measured from real recordings.
+    /// </summary>
+    public float IdleIntensity { get; set; } = 1.0f;
+
     /// <summary>WaveIn device index; -1 selects the default capture device (WAVE_MAPPER).</summary>
     public int MicDeviceNumber { get; set; } = -1;
 

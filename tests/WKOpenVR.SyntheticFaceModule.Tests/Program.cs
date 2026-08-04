@@ -32,6 +32,9 @@ var tests = new (string Name, Action Body)[]
     ("Frown is fast and bounded", FrownIsFastAndBounded),
     ("Smile intensity zero keeps corners still", SmileIntensityZeroKeepsCornersStill),
     ("Mixer composes mouth and emotion", MixerComposesMouthAndEmotion),
+    ("Mixer idle alone sets expressions", MixerIdleAloneSetsExpressions),
+    ("Idle layer produces calibrated activity", IdleLayerProducesCalibratedActivity),
+    ("Idle layer deterministic for seed", IdleLayerDeterministicForSeed),
     ("Mixer omits eye flag when no eyes", MixerOmitsEyeFlag),
     ("Mixer sets symmetric eyes", MixerSetsSymmetricEyes),
     ("Blink closes faster than it opens", BlinkClosesFasterThanOpens),
@@ -339,12 +342,89 @@ static void MixerComposesMouthAndEmotion()
     mouth[(int)FaceExpression.JawOpen] = 0.5f;
     emotion[(int)FaceExpression.MouthCornerPullRight] = 0.2f;
 
-    mixer.Compose(frame, mouth, mouthActive: true, emotion, emotionActive: true, eyes: null);
+    var idle = new float[FaceExpressionCount.Value];
+    idle[(int)FaceExpression.BrowInnerUpRight] = 0.04f;
+    idle[(int)FaceExpression.MouthCornerPullRight] = 0.1f;
+
+    mixer.Compose(frame, mouth, mouthActive: true, emotion, emotionActive: true, idle, idleActive: true, eyes: null);
 
     AssertTrue((frame.Flags & FaceFrameFlags.ExpressionsValid) != 0);
     AssertTrue((frame.Flags & FaceFrameFlags.EyeValid) == 0);
     AssertEqual(0.5f, frame.GetExpression(FaceExpression.JawOpen));
-    AssertEqual(0.2f, frame.GetExpression(FaceExpression.MouthCornerPullRight));
+    // Layers sum: emotion 0.2 + idle 0.1 on the same shape.
+    AssertEqual(0.3f, frame.GetExpression(FaceExpression.MouthCornerPullRight));
+    AssertEqual(0.04f, frame.GetExpression(FaceExpression.BrowInnerUpRight));
+}
+
+static void IdleLayerProducesCalibratedActivity()
+{
+    var layer = new IdleMotionLayer(new Random(7));
+    var offsets = new float[FaceExpressionCount.Value];
+    int browEvents = 0;
+    bool browAbove = false;
+    float browMax = 0f;
+    float cornerMax = 0f;
+    const float dt = 1f / 60f;
+    for (int i = 0; i < 120 * 60; i++)
+    {
+        layer.Update(dt, arousal: 0f, intensity: 1f, offsets);
+
+        float brow = offsets[(int)FaceExpression.BrowInnerUpLeft];
+        browMax = Math.Max(browMax, brow);
+        cornerMax = Math.Max(cornerMax, offsets[(int)FaceExpression.MouthCornerPullLeft]);
+        if (brow > 0.01f && !browAbove)
+        {
+            browEvents++;
+        }
+
+        browAbove = brow > 0.01f;
+
+        // Viseme-critical shapes must never move.
+        AssertEqual(0f, offsets[(int)FaceExpression.JawOpen]);
+        AssertEqual(0f, offsets[(int)FaceExpression.MouthClosed]);
+        AssertEqual(0f, offsets[(int)FaceExpression.LipFunnelUpperRight]);
+    }
+
+    // Two simulated minutes at ~12 events/min; allow wide slack for the random draw.
+    AssertTrue(browEvents is > 10 and < 45);
+    AssertTrue(browMax <= 0.06f);
+    AssertTrue(cornerMax <= 0.05f);
+
+    // Symmetry: both sides always carry the same value.
+    AssertEqual(
+        offsets[(int)FaceExpression.BrowInnerUpLeft],
+        offsets[(int)FaceExpression.BrowInnerUpRight]);
+}
+
+static void IdleLayerDeterministicForSeed()
+{
+    var a = new IdleMotionLayer(new Random(42));
+    var b = new IdleMotionLayer(new Random(42));
+    var bufA = new float[FaceExpressionCount.Value];
+    var bufB = new float[FaceExpressionCount.Value];
+    const float dt = 1f / 60f;
+    for (int i = 0; i < 600; i++)
+    {
+        a.Update(dt, arousal: 0.3f, intensity: 1f, bufA);
+        b.Update(dt, arousal: 0.3f, intensity: 1f, bufB);
+        for (int s = 0; s < bufA.Length; s++)
+        {
+            AssertEqual(bufA[s], bufB[s]);
+        }
+    }
+}
+
+static void MixerIdleAloneSetsExpressions()
+{
+    var mixer = new SyntheticFrameMixer();
+    var frame = new FaceFrame();
+    var idle = new float[FaceExpressionCount.Value];
+    idle[(int)FaceExpression.BrowInnerUpLeft] = 0.05f;
+
+    mixer.Compose(frame, mouth: null, mouthActive: false, emotion: null, emotionActive: false, idle, idleActive: true, eyes: null);
+
+    AssertTrue((frame.Flags & FaceFrameFlags.ExpressionsValid) != 0);
+    AssertEqual(0.05f, frame.GetExpression(FaceExpression.BrowInnerUpLeft));
 }
 
 static void MixerOmitsEyeFlag()
@@ -354,7 +434,7 @@ static void MixerOmitsEyeFlag()
     var mouth = new float[FaceExpressionCount.Value];
     mouth[(int)FaceExpression.JawOpen] = 0.3f;
 
-    mixer.Compose(frame, mouth, mouthActive: true, emotion: null, emotionActive: false, eyes: null);
+    mixer.Compose(frame, mouth, mouthActive: true, emotion: null, emotionActive: false, idle: null, idleActive: false, eyes: null);
 
     AssertTrue((frame.Flags & FaceFrameFlags.EyeValid) == 0);
 }
@@ -365,7 +445,7 @@ static void MixerSetsSymmetricEyes()
     var frame = new FaceFrame();
     var eye = new EyeOutput(Openness: 0.7f, GazeX: 0.2f, GazeY: -0.1f, PupilMm: 4f, MinDilationMm: 3f, MaxDilationMm: 5f);
 
-    mixer.Compose(frame, mouth: null, mouthActive: false, emotion: null, emotionActive: false, eye);
+    mixer.Compose(frame, mouth: null, mouthActive: false, emotion: null, emotionActive: false, idle: null, idleActive: false, eye);
 
     AssertTrue((frame.Flags & FaceFrameFlags.EyeValid) != 0);
     AssertEqual(frame.Eye.Left.Openness, frame.Eye.Right.Openness);

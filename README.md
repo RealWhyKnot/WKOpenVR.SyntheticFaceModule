@@ -34,6 +34,7 @@ for an annotated copy. Unknown or missing fields fall back to the defaults below
 | `EmotionIntensity` | `1.0` | Scales the emotion coloring (0 disables, 1 = full conservative caps). |
 | `SmileIntensity` | `1.0` | Scales the smile/frown channel on the mouth corners (0 keeps the corners still, 1 = calibrated amplitudes). |
 | `MouthIntensity` | `1.0` | Scales the mouth output. |
+| `IdleIntensity` | `1.0` | Scales the always-on idle micro-motion (small brow/squint events while quiet; 0 disables). |
 | `MicDeviceNumber` | `-1` | Capture device index; `-1` = system default. |
 | `MicDeviceName` | `null` | Prefer the first capture device whose name contains this text (overrides the index when matched). |
 | `EmotionModelPath` | `null` | Path to a license-clean ONNX speech-emotion model used when `QualityMode` is on. |

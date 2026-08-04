@@ -39,6 +39,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
     private readonly SyntheticFrameMixer _mixer = new();
     private readonly float[] _mouthBuffer = new float[FaceExpressionCount.Value];
     private readonly float[] _emotionBuffer = new float[FaceExpressionCount.Value];
+    private readonly float[] _idleBuffer = new float[FaceExpressionCount.Value];
     private readonly Stopwatch _clock = new();
     private readonly FrameRateLimiter _pacer = new(UpdateRateHz);
 
@@ -47,6 +48,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
     private IAudioAnalysisSource? _source;
     private IProsodyEstimator? _prosody;
     private ProceduralEyes? _eyes;
+    private IdleMotionLayer? _idle;
     private IFaceModuleLogger _log = NullFaceModuleLogger.Instance;
 
     private bool _expressionAllowed;
@@ -105,6 +107,8 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
         _active = wantExpression || wantEyes;
 
         _eyes = new ProceduralEyes(_rng);
+        // Child RNG so idle event draws never perturb the eye stream's determinism.
+        _idle = new IdleMotionLayer(new Random(_rng.Next()));
         _prosody = BuildProsodyEstimator(_config);
 
         if (_active)
@@ -209,6 +213,15 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
             _coloring.Apply(prosody, _config.EmotionIntensity, _config.SmileIntensity, dt, _emotionBuffer);
         }
 
+        // Idle micro-motion runs whenever emotion channels are allowed, with or without
+        // audio, so the face never goes dead during mic silence.
+        bool idleActive = driveEmotion && _idle is not null;
+        if (idleActive)
+        {
+            float idleArousal = prosody.SpeechActive ? prosody.Arousal : 0f;
+            _idle!.Update(dt, idleArousal, _config.IdleIntensity, _idleBuffer);
+        }
+
         EyeOutput? eyes = null;
         if (driveEyes && _eyes is not null)
         {
@@ -222,6 +235,8 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
             mouthActive,
             emotionActive ? _emotionBuffer : null,
             emotionActive,
+            idleActive ? _idleBuffer : null,
+            idleActive,
             eyes);
 
         FaceFrameValidator.Sanitize(frame);
@@ -396,6 +411,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
 
         _mouth.Reset();
         _coloring.Reset();
+        _idle?.Reset();
         _vad.Reset();
         _prosody?.Reset();
         _clock.Reset();

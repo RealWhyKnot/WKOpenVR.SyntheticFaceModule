@@ -13,9 +13,10 @@ namespace WKOpenVR.SyntheticFaceModule.Mixer;
 public sealed class SyntheticFrameMixer
 {
     /// <summary>
-    /// Fills <paramref name="frame"/> from the layer buffers. <paramref name="mouth"/> and
-    /// <paramref name="emotion"/> are 88-length expression buffers (mouth core and additive coloring);
-    /// either may be inactive. <paramref name="eyes"/> is written to both eyes when present.
+    /// Fills <paramref name="frame"/> from the layer buffers. <paramref name="mouth"/>,
+    /// <paramref name="emotion"/>, and <paramref name="idle"/> are 88-length expression buffers
+    /// (mouth core, additive coloring, and idle micro-motion); any may be inactive.
+    /// <paramref name="eyes"/> is written to both eyes when present.
     /// </summary>
     public void Compose(
         FaceFrame frame,
@@ -23,24 +24,34 @@ public sealed class SyntheticFrameMixer
         bool mouthActive,
         float[]? emotion,
         bool emotionActive,
+        float[]? idle,
+        bool idleActive,
         in EyeOutput? eyes)
     {
         frame.Clear();
 
-        if ((mouthActive && mouth is not null) || (emotionActive && emotion is not null))
+        bool useMouth = mouthActive && mouth is not null;
+        bool useEmotion = emotionActive && emotion is not null;
+        bool useIdle = idleActive && idle is not null;
+        if (useMouth || useEmotion || useIdle)
         {
             float[] expr = frame.Expressions;
             for (int i = 0; i < expr.Length; i++)
             {
                 float value = 0f;
-                if (mouthActive && mouth is not null)
+                if (useMouth)
                 {
-                    value += mouth[i];
+                    value += mouth![i];
                 }
 
-                if (emotionActive && emotion is not null)
+                if (useEmotion)
                 {
-                    value += emotion[i];
+                    value += emotion![i];
+                }
+
+                if (useIdle)
+                {
+                    value += idle![i];
                 }
 
                 expr[i] = Math.Clamp(value, 0f, 1f);
