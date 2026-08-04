@@ -39,6 +39,8 @@ var tests = new (string Name, Action Body)[]
     ("Module writes mouth frame", ModuleWritesMouthFrame),
     ("Module sets eye flag when eyes enabled", ModuleSetsEyeFlagWhenEnabled),
     ("Module leaves eyes to VRChat by default", ModuleLeavesEyesByDefault),
+    ("Module reports healthy status when active", ModuleReportsHealthyStatus),
+    ("Module reports no-channels status when idle", ModuleReportsNoChannelsStatus),
     ("Package dependencies are allowed", PackageDependenciesAreAllowed),
 };
 
@@ -401,6 +403,38 @@ static void CrossfadeFallsBackWithoutModel()
 }
 
 // ---- Module integration ----
+
+static void ModuleReportsHealthyStatus()
+{
+    var source = new FixedAudioAnalysisSource(MakeVoiceFrame(rms: 0.3f));
+    var config = new SyntheticConfig { DriveMouth = true, DriveEmotion = false, DriveEyes = false };
+    using var module = new SyntheticFaceModule(source, config);
+
+    module.InitializeAsync(
+        new FaceModuleContext(Path.GetTempPath()),
+        new FaceModuleInitRequest(EyeAvailable: true, ExpressionAvailable: true, HeadAvailable: false),
+        CancellationToken.None).AsTask().GetAwaiter().GetResult();
+
+    FaceModuleStatus status = module.GetStatus();
+    AssertTrue(status.Health == FaceModuleHealth.Healthy);
+    AssertTrue(status.Detail is null);
+}
+
+static void ModuleReportsNoChannelsStatus()
+{
+    var source = new FixedAudioAnalysisSource(MakeVoiceFrame(rms: 0.3f));
+    var config = new SyntheticConfig { DriveMouth = false, DriveEmotion = false, DriveEyes = false };
+    using var module = new SyntheticFaceModule(source, config);
+
+    module.InitializeAsync(
+        new FaceModuleContext(Path.GetTempPath()),
+        new FaceModuleInitRequest(EyeAvailable: true, ExpressionAvailable: true, HeadAvailable: false),
+        CancellationToken.None).AsTask().GetAwaiter().GetResult();
+
+    FaceModuleStatus status = module.GetStatus();
+    AssertTrue(status.Health == FaceModuleHealth.Healthy);
+    AssertTrue(status.Detail == "no channels enabled");
+}
 
 static void ModuleWritesMouthFrame()
 {

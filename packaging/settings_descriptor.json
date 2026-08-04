@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "file": "synthetic_face.json",
+  "settings": [
+    { "key": "DriveMouth", "type": "bool", "label": "Drive mouth from voice", "default": true },
+    { "key": "DriveEmotion", "type": "bool", "label": "Emotion coloring", "default": true },
+    { "key": "DriveEyes", "type": "bool", "label": "Procedural eyes", "default": false },
+    { "key": "QualityMode", "type": "bool", "label": "Model-based emotion (needs a model file)", "default": false },
+    { "key": "MouthIntensity", "type": "float", "label": "Mouth intensity", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "key": "EmotionIntensity", "type": "float", "label": "Emotion intensity", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "key": "MicDeviceNumber", "type": "int", "label": "Mic device index (-1 = default)", "min": -1, "max": 63, "default": -1 },
+    { "key": "MicDeviceName", "type": "string", "label": "Mic device name match", "default": "" }
+  ]
+}

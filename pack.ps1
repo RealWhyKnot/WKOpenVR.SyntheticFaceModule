@@ -116,6 +116,9 @@ $manifest = [ordered]@{
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText((Join-Path $stageDir "manifest.json"), ($manifest | ConvertTo-Json -Depth 12), $utf8NoBom)
 
+# Settings descriptor lets the overlay render editing controls for this module.
+Copy-Item -LiteralPath (Join-Path $root "packaging\settings_descriptor.json") -Destination (Join-Path $stageDir "settings_descriptor.json") -Force
+
 if (Test-Path $payload) { Remove-Item -Force -LiteralPath $payload }
 Compress-Archive -Path (Join-Path $stageDir "*") -DestinationPath $payload -Force
 

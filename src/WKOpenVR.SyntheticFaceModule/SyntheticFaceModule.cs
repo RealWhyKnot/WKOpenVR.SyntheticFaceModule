@@ -23,9 +23,10 @@ namespace WKOpenVR.SyntheticFaceModule;
 /// Trace it emits the same snapshot every frame (a firehose for deep diagnosis). Both are gated by
 /// the logger so they cost nothing when the host is not verbose.
 /// </summary>
-public sealed class SyntheticFaceModule : IFaceTrackingModule, IDisposable
+public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatusSource, IDisposable
 {
     private const double DiagnosticIntervalSeconds = 0.5;
+    private const float UpdateRateHz = 120.0f;
 
     private readonly IAudioAnalysisSource? _injectedSource;
     private readonly Random _rng;
@@ -39,6 +40,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IDisposable
     private readonly float[] _mouthBuffer = new float[FaceExpressionCount.Value];
     private readonly float[] _emotionBuffer = new float[FaceExpressionCount.Value];
     private readonly Stopwatch _clock = new();
+    private readonly FrameRateLimiter _pacer = new(UpdateRateHz);
 
     private SyntheticConfig _config;
     private SyntheticConfigLoader? _configLoader;
@@ -50,6 +52,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IDisposable
     private bool _expressionAllowed;
     private bool _eyeAllowed;
     private bool _active;
+    private string? _micStartError;
     private double _lastUpdateSeconds;
     private double _diagAccumSeconds;
     private bool _lastSpeech;
@@ -74,7 +77,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IDisposable
         "4df7850f-1d75-4665-9eab-6f07e0f3b5dc",
         "WKOpenVR Synthetic Face Module",
         "WhyKnot",
-        new Version(0, 2, 0));
+        new Version(0, 3, 0));
 
     public FaceModuleCapabilities Capabilities =>
         FaceModuleCapabilities.Eye | FaceModuleCapabilities.Expression | FaceModuleCapabilities.AudioInput;
@@ -111,7 +114,18 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IDisposable
                 log: _log);
             if (wantExpression)
             {
-                _source.Start();
+                try
+                {
+                    _source.Start();
+                    _micStartError = null;
+                }
+                catch (Exception ex)
+                {
+                    // A missing or broken capture device should degrade the module, not kill it;
+                    // the health status below carries the reason to the app UI.
+                    _micStartError = ex.Message;
+                    _log.Error($"[synthetic/mic] capture failed to start: {ex.Message}");
+                }
             }
 
             _clock.Restart();
@@ -136,6 +150,13 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IDisposable
 
     public ValueTask UpdateAsync(FaceFrame frame, CancellationToken cancellationToken)
     {
+        // The host drives this in a tight loop with no delay; pace to the downstream
+        // consumer rate. Injected-source harnesses drive their own timeline unpaced.
+        if (_injectedSource is null)
+        {
+            _pacer.WaitForNext(cancellationToken);
+        }
+
         frame.Clear();
         if (!_active)
         {
@@ -212,6 +233,26 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IDisposable
     {
         Shutdown();
         return ValueTask.CompletedTask;
+    }
+
+    public FaceModuleStatus GetStatus()
+    {
+        if (!_active)
+        {
+            return new FaceModuleStatus(FaceModuleHealth.Healthy, "no channels enabled");
+        }
+
+        if (_micStartError is not null)
+        {
+            return new FaceModuleStatus(FaceModuleHealth.DeviceLost, _micStartError);
+        }
+
+        if (_source is MicrophoneAudioSource mic && mic.DeviceLost)
+        {
+            return new FaceModuleStatus(FaceModuleHealth.DeviceLost, mic.LastError ?? "audio capture stopped");
+        }
+
+        return new FaceModuleStatus(FaceModuleHealth.Healthy);
     }
 
     public void Dispose() => Shutdown();

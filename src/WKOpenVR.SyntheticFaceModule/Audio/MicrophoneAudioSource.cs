@@ -27,6 +27,8 @@ public sealed class MicrophoneAudioSource : IAudioAnalysisSource
     private int _ringFilled;
     private AudioAnalysisFrame? _latest;
     private bool _started;
+    private volatile bool _deviceLost;
+    private string? _lastError;
 
     public MicrophoneAudioSource(
         int deviceNumber = -1,
@@ -86,6 +88,12 @@ public sealed class MicrophoneAudioSource : IAudioAnalysisSource
         return -1;
     }
 
+    /// <summary>True after capture stopped on an error (device unplugged, driver failure).</summary>
+    public bool DeviceLost => _deviceLost;
+
+    /// <summary>Short description of the last capture error, when one occurred.</summary>
+    public string? LastError => _lastError;
+
     public void Start()
     {
         if (_started)
@@ -96,6 +104,8 @@ public sealed class MicrophoneAudioSource : IAudioAnalysisSource
         _clock.Restart();
         _capture.StartRecording();
         _started = true;
+        _deviceLost = false;
+        _lastError = null;
         _log?.Info($"[synthetic/mic] capture started (device={_capture.DeviceNumber}, {_capture.WaveFormat})");
     }
 
@@ -175,6 +185,8 @@ public sealed class MicrophoneAudioSource : IAudioAnalysisSource
     {
         if (args.Exception is not null)
         {
+            _lastError = args.Exception.Message;
+            _deviceLost = true;
             _log?.Warn($"[synthetic/mic] recording stopped with error: {args.Exception.Message}");
         }
     }
