@@ -21,14 +21,33 @@ public sealed class ProceduralEyes
     private const float MinPupilMm = 3.0f;
     private const float MaxPupilMm = 5.0f;
 
+    /// <summary>Half the pupil's arousal travel; full span stays inside the advertised 3-5 mm.</summary>
+    private const float PupilArousalSwingMm = 0.8f;
+
+    // Occasional eyelid droop episodes: real lids rest at 1.0 almost always, but sag a
+    // little every half minute or so instead of staying pinned open forever.
+    private const float DroopEventsPerMinute = 2.0f;
+    private const float DroopDepthMin = 0.05f;
+    private const float DroopDepthMax = 0.15f;
+    private const float DroopDurationMinSeconds = 2.0f;
+    private const float DroopDurationMaxSeconds = 6.0f;
+
+    private readonly Random _rng;
     private readonly BlinkScheduler _blink;
     private readonly MicroSaccadeGaze _gaze;
     private readonly Dsp.AsymmetricSmoother _pupil = new(attackSeconds: 1.5f, releaseSeconds: 2.5f, initial: BasePupilMm);
 
+    private float _droopCountdown;
+    private float _droopTime = -1f;
+    private float _droopDuration;
+    private float _droopDepth;
+
     public ProceduralEyes(Random rng)
     {
+        _rng = rng;
         _blink = new BlinkScheduler(rng);
         _gaze = new MicroSaccadeGaze(rng);
+        _droopCountdown = NextDroopGap();
     }
 
     public EyeOutput Update(float dtSeconds, float arousal = 0f)
@@ -45,7 +64,9 @@ public sealed class ProceduralEyes
         float downward = MathF.Max(0f, -_gaze.GazeY);
         openness *= 1f - (0.15f * downward);
 
-        float targetPupil = BasePupilMm + (0.2f * (Math.Clamp(arousal, 0f, 1f) - 0.5f) * 2f);
+        openness *= 1f - UpdateDroop(dtSeconds, arousal);
+
+        float targetPupil = BasePupilMm + (PupilArousalSwingMm * (Math.Clamp(arousal, 0f, 1f) - 0.5f) * 2f);
         float pupil = _pupil.Update(targetPupil, dtSeconds);
 
         return new EyeOutput(
@@ -56,4 +77,42 @@ public sealed class ProceduralEyes
             MinDilationMm: MinPupilMm,
             MaxDilationMm: MaxPupilMm);
     }
+
+    /// <summary>Advances the droop scheduler; returns the current droop amount (0 = none).</summary>
+    private float UpdateDroop(float dtSeconds, float arousal)
+    {
+        if (_droopTime < 0f)
+        {
+            // High arousal suppresses sleepy lids.
+            _droopCountdown -= dtSeconds * (1f - (0.7f * Math.Clamp(arousal, 0f, 1f)));
+            if (_droopCountdown > 0f)
+            {
+                return 0f;
+            }
+
+            _droopTime = 0f;
+            _droopDuration = Lerp(DroopDurationMinSeconds, DroopDurationMaxSeconds, (float)_rng.NextDouble());
+            _droopDepth = Lerp(DroopDepthMin, DroopDepthMax, (float)_rng.NextDouble());
+        }
+
+        _droopTime += dtSeconds;
+        if (_droopTime >= _droopDuration)
+        {
+            _droopTime = -1f;
+            _droopCountdown = NextDroopGap();
+            return 0f;
+        }
+
+        // Smooth half-sine envelope over the episode.
+        float t = _droopTime / _droopDuration;
+        return _droopDepth * MathF.Sin(t * MathF.PI);
+    }
+
+    private float NextDroopGap()
+    {
+        double u = Math.Max(1e-6, _rng.NextDouble());
+        return (float)(-Math.Log(u) * 60.0 / DroopEventsPerMinute);
+    }
+
+    private static float Lerp(float a, float b, float t) => a + ((b - a) * t);
 }

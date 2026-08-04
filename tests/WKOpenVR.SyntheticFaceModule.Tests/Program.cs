@@ -39,7 +39,9 @@ var tests = new (string Name, Action Body)[]
     ("Mixer sets symmetric eyes", MixerSetsSymmetricEyes),
     ("Blink closes faster than it opens", BlinkClosesFasterThanOpens),
     ("Gaze stays within cone", GazeStaysWithinCone),
+    ("Saccades are paced fast", SaccadesArePacedFast),
     ("Procedural eyes are bounded", ProceduralEyesBounded),
+    ("Pupil span follows arousal", PupilSpanFollowsArousal),
     ("Speaker baseline produces z-scores", SpeakerBaselineZScores),
     ("Heuristic arousal rises with loudness", HeuristicArousalRisesWithLoudness),
     ("Crossfade falls back to heuristic without model", CrossfadeFallsBackWithoutModel),
@@ -490,16 +492,38 @@ static void GazeStaysWithinCone()
     var gaze = new MicroSaccadeGaze(new Random(3));
     float minX = 1f;
     float maxX = -1f;
+    float sumY = 0f;
     for (int i = 0; i < 1500; i++)
     {
         gaze.Update(0.016f);
         AssertTrue(MathF.Abs(gaze.GazeX) <= 0.40f);
-        AssertTrue(MathF.Abs(gaze.GazeY) <= 0.30f);
+        // Down-biased asymmetric cone: more room below center than above.
+        AssertTrue(gaze.GazeY <= 0.16f && gaze.GazeY >= -0.50f);
         minX = MathF.Min(minX, gaze.GazeX);
         maxX = MathF.Max(maxX, gaze.GazeX);
+        sumY += gaze.GazeY;
     }
 
     AssertTrue(maxX - minX > 0.05f);
+    AssertTrue(sumY / 1500f < -0.03f);
+}
+
+static void SaccadesArePacedFast()
+{
+    var gaze = new MicroSaccadeGaze(new Random(9));
+    int saccades = 0;
+    for (int i = 0; i < 3750; i++)
+    {
+        gaze.Update(0.016f);
+        if (gaze.SaccadeStarted)
+        {
+            saccades++;
+        }
+    }
+
+    // 60 simulated seconds; short exponential dwells put the rate near real
+    // recordings (roughly 90-170 per minute), far above the old leisurely pace.
+    AssertTrue(saccades is > 70 and < 220);
 }
 
 static void ProceduralEyesBounded()
@@ -512,6 +536,23 @@ static void ProceduralEyesBounded()
         AssertTrue(o.PupilMm >= 2.9f && o.PupilMm <= 5.1f);
         AssertTrue(MathF.Abs(o.GazeX) <= 0.40f);
     }
+}
+
+static void PupilSpanFollowsArousal()
+{
+    var calm = new ProceduralEyes(new Random(5));
+    var excited = new ProceduralEyes(new Random(5));
+    float calmPupil = 0f;
+    float excitedPupil = 0f;
+    for (int i = 0; i < 3000; i++)
+    {
+        calmPupil = calm.Update(0.016f, arousal: 0f).PupilMm;
+        excitedPupil = excited.Update(0.016f, arousal: 1f).PupilMm;
+    }
+
+    // Converged pupils must actually use the advertised range, not a token sliver.
+    AssertTrue(excitedPupil - calmPupil >= 1.0f);
+    AssertTrue(calmPupil >= 3.0f && excitedPupil <= 5.0f);
 }
 
 // ---- Prosody ----

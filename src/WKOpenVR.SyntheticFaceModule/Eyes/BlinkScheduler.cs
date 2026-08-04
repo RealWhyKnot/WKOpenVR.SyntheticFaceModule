@@ -33,7 +33,7 @@ public sealed class BlinkScheduler
 
     public BlinkScheduler(
         Random rng,
-        float blinksPerMinute = 15f,
+        float blinksPerMinute = 12f,
         float closeSeconds = 0.06f,
         float holdSeconds = 0.02f,
         float openSeconds = 0.14f,

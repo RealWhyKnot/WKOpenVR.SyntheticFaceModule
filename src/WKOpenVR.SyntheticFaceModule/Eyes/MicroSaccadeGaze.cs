@@ -16,9 +16,12 @@ public sealed class MicroSaccadeGaze
 
     private readonly Random _rng;
     private readonly float _coneX;
-    private readonly float _coneY;
+    private readonly float _coneYUp;
+    private readonly float _coneYDown;
+    private readonly float _centerY;
     private readonly float _driftAmplitude;
     private readonly float _minDwellSeconds;
+    private readonly float _dwellScaleSeconds;
     private readonly float _maxDwellSeconds;
 
     private Phase _phase = Phase.Fixating;
@@ -34,20 +37,31 @@ public sealed class MicroSaccadeGaze
     private float _driftX;
     private float _driftY;
 
+    // Defaults calibrated against hardware recordings: gaze rides slightly below center
+    // with more room downward than up, and fixations are short (median under 300 ms)
+    // with an exponential tail, not the leisurely seconds-long dwells of an idle loop.
     public MicroSaccadeGaze(
         Random rng,
         float coneX = 0.35f,
-        float coneY = 0.22f,
+        float coneYUp = 0.25f,
+        float coneYDown = 0.30f,
+        float centerY = -0.13f,
         float driftAmplitude = 0.02f,
-        float minDwellSeconds = 0.4f,
-        float maxDwellSeconds = 3.0f)
+        float minDwellSeconds = 0.08f,
+        float dwellScaleSeconds = 0.30f,
+        float maxDwellSeconds = 1.5f)
     {
         _rng = rng;
         _coneX = coneX;
-        _coneY = coneY;
+        _coneYUp = coneYUp;
+        _coneYDown = coneYDown;
+        _centerY = centerY;
         _driftAmplitude = driftAmplitude;
         _minDwellSeconds = minDwellSeconds;
+        _dwellScaleSeconds = dwellScaleSeconds;
         _maxDwellSeconds = maxDwellSeconds;
+        _baseY = centerY;
+        GazeY = centerY;
         _dwellRemaining = SampleDwell(0f);
     }
 
@@ -108,10 +122,12 @@ public sealed class MicroSaccadeGaze
         _startX = GazeX;
         _startY = GazeY;
 
-        // Bias toward the social center; occasional wider glance.
-        float reach = _rng.NextDouble() < 0.2 ? 1.0f : 0.55f;
+        // Bias toward the social center; arousal makes wider glances likelier and larger.
+        float a = Math.Clamp(arousal, 0f, 1f);
+        float reach = _rng.NextDouble() < 0.15 + (0.25 * a) ? 1.0f : 0.55f + (0.2f * a);
         _targetX = ((float)(_rng.NextDouble() * 2.0 - 1.0)) * _coneX * reach;
-        _targetY = ((float)(_rng.NextDouble() * 2.0 - 1.0)) * _coneY * reach;
+        float spanY = (float)(_rng.NextDouble() * 2.0 - 1.0);
+        _targetY = _centerY + (spanY * (spanY >= 0f ? _coneYUp : _coneYDown) * reach);
 
         float distance = MathF.Sqrt(
             ((_targetX - _startX) * (_targetX - _startX)) +
@@ -122,13 +138,16 @@ public sealed class MicroSaccadeGaze
         _saccadeTime = 0f;
         _phase = Phase.Saccading;
         SaccadeStarted = true;
-        _ = arousal;
     }
 
     private float SampleDwell(float arousal)
     {
-        float maxDwell = _maxDwellSeconds - ((_maxDwellSeconds - _minDwellSeconds) * 0.6f * Math.Clamp(arousal, 0f, 1f));
-        return _minDwellSeconds + ((float)_rng.NextDouble() * MathF.Max(0f, maxDwell - _minDwellSeconds));
+        // Exponential dwell with a floor: most fixations are brief, a few linger.
+        // Arousal shortens the tail.
+        float scale = _dwellScaleSeconds * (1f - (0.5f * Math.Clamp(arousal, 0f, 1f)));
+        double u = Math.Max(1e-6, _rng.NextDouble());
+        float dwell = _minDwellSeconds + ((float)(-Math.Log(u)) * scale);
+        return MathF.Min(dwell, _maxDwellSeconds);
     }
 
     private static float Lerp(float a, float b, float t) => a + ((b - a) * t);
