@@ -23,6 +23,8 @@ var tests = new (string Name, Action Body)[]
     ("Asymmetric smoother attack faster than release", SmootherAttackFasterThanRelease),
     ("Mouth is neutral on silence", MouthNeutralOnSilence),
     ("Mouth opens on loud vowel", MouthOpensOnLoudVowel),
+    ("Mouth lip openers follow jaw", MouthLipOpenersFollowJaw),
+    ("Fricative drives tightener and damps jaw", FricativeDrivesTightenerAndDampsJaw),
     ("Mouth close does not fight open speech", MouthCloseDoesNotFightOpenSpeech),
     ("Mouth rounded vs front mapping", MouthRoundedVsFrontMapping),
     ("Emotion coloring respects caps and avoids mouth shapes", EmotionColoringCapsAndMouth),
@@ -184,6 +186,41 @@ static void MouthOpensOnLoudVowel()
     }
 
     AssertTrue(expr[(int)FaceExpression.JawOpen] > 0.3f);
+}
+
+static void MouthLipOpenersFollowJaw()
+{
+    var solver = new MouthSolver();
+    var expr = new float[FaceExpressionCount.Value];
+    var vowel = MakeVoiceFrame(rms: 0.3f, centroid: 1416f);
+    for (int i = 0; i < 40; i++)
+    {
+        solver.Solve(vowel, activity: 1f, dtSeconds: 0.02f, intensity: 1f, expr);
+    }
+
+    float jaw = expr[(int)FaceExpression.JawOpen];
+    AssertTrue(jaw > 0.3f);
+    AssertEqual(jaw * 0.65f, expr[(int)FaceExpression.MouthUpperUpRight]);
+    AssertEqual(expr[(int)FaceExpression.MouthUpperUpRight], expr[(int)FaceExpression.MouthUpperDeepenRight]);
+    AssertEqual(jaw * 0.52f, expr[(int)FaceExpression.MouthLowerDownLeft]);
+}
+
+static void FricativeDrivesTightenerAndDampsJaw()
+{
+    var vowelSolver = new MouthSolver();
+    var fricSolver = new MouthSolver();
+    var vowelExpr = new float[FaceExpressionCount.Value];
+    var fricExpr = new float[FaceExpressionCount.Value];
+    var vowel = MakeVoiceFrame(rms: 0.3f, centroid: 1416f);
+    var fricative = MakeVoiceFrame(rms: 0.25f, centroid: 3400f, pitch: 0f, voiced: false, zcr: 0.30f);
+    for (int i = 0; i < 40; i++)
+    {
+        vowelSolver.Solve(vowel, activity: 1f, dtSeconds: 0.02f, intensity: 1f, vowelExpr);
+        fricSolver.Solve(fricative, activity: 1f, dtSeconds: 0.02f, intensity: 1f, fricExpr);
+    }
+
+    AssertTrue(fricExpr[(int)FaceExpression.MouthTightenerRight] > 0.02f);
+    AssertTrue(fricExpr[(int)FaceExpression.JawOpen] < vowelExpr[(int)FaceExpression.JawOpen]);
 }
 
 static void MouthCloseDoesNotFightOpenSpeech()
@@ -737,7 +774,7 @@ static float[] Sine(float frequency, int count, int sampleRate, float amplitude 
     return samples;
 }
 
-static AudioAnalysisFrame MakeVoiceFrame(float rms, float centroid = 1200f, float pitch = 150f, bool voiced = true)
+static AudioAnalysisFrame MakeVoiceFrame(float rms, float centroid = 1200f, float pitch = 150f, bool voiced = true, float zcr = 0f)
 {
     return new AudioAnalysisFrame(13)
     {
@@ -746,6 +783,7 @@ static AudioAnalysisFrame MakeVoiceFrame(float rms, float centroid = 1200f, floa
         PitchHz = pitch,
         SpectralCentroidHz = centroid,
         SpectralRolloffHz = centroid * 1.5f,
+        ZeroCrossingRate = zcr,
         SampleRate = 16000,
         DurationSeconds = 0.02f,
     };

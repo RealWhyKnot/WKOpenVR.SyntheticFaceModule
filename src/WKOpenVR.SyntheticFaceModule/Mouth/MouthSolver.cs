@@ -69,7 +69,10 @@ public sealed class MouthSolver
         float pucker = jaw * _rounded * 0.45f;
         float stretch = jaw * ((_front * 0.55f) + (_fricative * 0.35f));
         float tightener = jaw * _fricative * 0.40f;
-        float upperUp = jawOpen * 0.20f;
+        // Lip-opener ratios measured from hardware recordings over speaking frames:
+        // upper lip rises at ~0.65x jaw and the lower lip drops at ~0.52x.
+        float upperUp = jawOpen * 0.65f;
+        float lowerDown = jawOpen * 0.52f;
 
         Set(expressions, FaceExpression.JawOpen, jawOpen, intensity);
         Set(expressions, FaceExpression.MouthClosed, mouthClosed, intensity);
@@ -90,8 +93,14 @@ public sealed class MouthSolver
         Set(expressions, FaceExpression.MouthTightenerRight, tightener, intensity);
         Set(expressions, FaceExpression.MouthTightenerLeft, tightener, intensity);
 
+        // Hardware trackers report UpperDeepen locked to UpperUp; mirror the pairing.
         Set(expressions, FaceExpression.MouthUpperUpRight, upperUp, intensity);
         Set(expressions, FaceExpression.MouthUpperUpLeft, upperUp, intensity);
+        Set(expressions, FaceExpression.MouthUpperDeepenRight, upperUp, intensity);
+        Set(expressions, FaceExpression.MouthUpperDeepenLeft, upperUp, intensity);
+
+        Set(expressions, FaceExpression.MouthLowerDownRight, lowerDown, intensity);
+        Set(expressions, FaceExpression.MouthLowerDownLeft, lowerDown, intensity);
 
         LastJawOpen = expressions[(int)FaceExpression.JawOpen];
         LastMouthClosed = expressions[(int)FaceExpression.MouthClosed];
