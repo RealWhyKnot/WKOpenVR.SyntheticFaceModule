@@ -138,7 +138,8 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
             : $"{_config.MicDeviceNumber}/{_config.MicDeviceName}";
         _log.Info(
             $"[synthetic] init mouth={_config.DriveMouth} emotion={_config.DriveEmotion} eyes={_config.DriveEyes} " +
-            $"quality={_config.QualityMode} emoIntensity={_config.EmotionIntensity:F2} mouthIntensity={_config.MouthIntensity:F2} " +
+            $"quality={_config.QualityMode} emoIntensity={_config.EmotionIntensity:F2} smileIntensity={_config.SmileIntensity:F2} " +
+            $"mouthIntensity={_config.MouthIntensity:F2} " +
             $"mic={mic} sdkAbi={FaceModuleAbi.Version} sdk={FaceModuleAbi.SdkVersion} " +
             $"config={_configLoader?.LoadedPath ?? "(programmatic)"}");
 
@@ -205,7 +206,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
         if (emotionActive)
         {
             prosody = _prosody!.Estimate(audio!, activity, isSpeech, dt);
-            _coloring.Apply(prosody, _config.EmotionIntensity, dt, _emotionBuffer);
+            _coloring.Apply(prosody, _config.EmotionIntensity, _config.SmileIntensity, dt, _emotionBuffer);
         }
 
         EyeOutput? eyes = null;

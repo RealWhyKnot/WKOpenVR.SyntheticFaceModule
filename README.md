@@ -8,9 +8,10 @@ hardware:
 - **Mouth** - two-stage lip-sync: an RMS/voice-activity jaw envelope plus an MFCC/spectral
   broad-viseme classifier (open / front / rounded vowels and fricatives) for nuanced lip shapes,
   with fast-attack/slow-release smoothing and coarticulation.
-- **Emotion** - subtle, confidence-gated expression coloring (brows, cheeks, mouth corners, eye
-  squint/wide) derived from prosody relative to a per-speaker baseline. It never overrides the
-  viseme-critical mouth shapes.
+- **Emotion** - confidence-gated expression from prosody relative to a per-speaker baseline:
+  subtle coloring on brows and eye squint/wide, plus a full-range smile/frown channel on the
+  mouth corners with cheek raise, tuned to real face-tracking recordings. It never overrides
+  the viseme-critical mouth shapes (jaw, lips, stretch, tightener).
 - **Eyes** - optional procedural blinks (hazard-scheduled, fast-close/slow-open) and micro-saccade
   gaze. Off by default so VRChat's own idle eyes run; enable to drive the avatar's eye parameters.
 - **Quality tier** (opt-in) - a tiny ONNX speech-emotion model can replace the heuristic estimator
@@ -27,10 +28,11 @@ for an annotated copy. Unknown or missing fields fall back to the defaults below
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `DriveMouth` | `true` | Microphone-driven mouth shapes (lip-sync). |
-| `DriveEmotion` | `true` | Subtle prosody coloring on brows/cheeks/mouth corners; never overrides the lip-sync mouth. |
+| `DriveEmotion` | `true` | Prosody-driven expression: subtle brow/eye coloring plus the smile/frown channel; never overrides the lip-sync mouth. |
 | `DriveEyes` | `false` | Procedural blink + gaze. Off keeps VRChat's own idle eyes; on drives the avatar's eyes from this module. |
 | `QualityMode` | `false` | Use a local ONNX speech-emotion model for better valence (needs `EmotionModelPath`); CPU-only, opt-in. Falls back to the heuristic when no model is present. |
 | `EmotionIntensity` | `1.0` | Scales the emotion coloring (0 disables, 1 = full conservative caps). |
+| `SmileIntensity` | `1.0` | Scales the smile/frown channel on the mouth corners (0 keeps the corners still, 1 = calibrated amplitudes). |
 | `MouthIntensity` | `1.0` | Scales the mouth output. |
 | `MicDeviceNumber` | `-1` | Capture device index; `-1` = system default. |
 | `MicDeviceName` | `null` | Prefer the first capture device whose name contains this text (overrides the index when matched). |

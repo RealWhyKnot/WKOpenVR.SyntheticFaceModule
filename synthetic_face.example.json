@@ -18,6 +18,10 @@
   // Scales the emotion coloring amount: 0 disables it, 1 uses the full (already conservative) caps.
   "EmotionIntensity": 1.0,
 
+  // Scales the smile/frown channel on the mouth corners (tuned to real tracker recordings).
+  // 0 keeps the corners still; 1 lets strong positive valence reach a full smile.
+  "SmileIntensity": 1.0,
+
   // Scales the mouth output amount. 1 is nominal.
   "MouthIntensity": 1.0,
 
