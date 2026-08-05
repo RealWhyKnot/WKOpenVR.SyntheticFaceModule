@@ -6,6 +6,12 @@ The `release.yml` body for each tag is composed mechanically from the commit sli
 
 ## Unreleased
 
+_No notable changes since the last release._
+
+---
+
+## v2026.8.5.0-beta -- 2026-08-05
+
 ### Added
 - **module:** Pace updates, report health, ship settings descriptor (9523aa2)
 - **module:** Add calibrated smile and frown channel on the mouth corners (9772305)
