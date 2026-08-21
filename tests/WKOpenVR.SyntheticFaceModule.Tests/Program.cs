@@ -1,4 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Text.Json;
 using WKOpenVR.FaceTracking.Sdk;
 using WKOpenVR.SyntheticFaceModule;
 using WKOpenVR.SyntheticFaceModule.Audio;
@@ -56,6 +58,7 @@ var tests = new (string Name, Action Body)[]
     ("Module reports healthy status when active", ModuleReportsHealthyStatus),
     ("Module reports no-channels status when idle", ModuleReportsNoChannelsStatus),
     ("Package dependencies are allowed", PackageDependenciesAreAllowed),
+    ("Settings descriptor matches config defaults", SettingsDescriptorMatchesConfigDefaults),
 };
 
 foreach (var test in tests)
@@ -837,6 +840,52 @@ static void ModuleLeavesEyesByDefault()
     module.TeardownAsync(CancellationToken.None).AsTask().GetAwaiter().GetResult();
 
     AssertTrue((frame.Flags & FaceFrameFlags.EyeValid) == 0);
+}
+
+// The descriptor is what a host UI renders, so a default that drifts from SyntheticConfig shows the
+// user a value the module will not actually use.
+static void SettingsDescriptorMatchesConfigDefaults()
+{
+    var repo = FindRepoRoot();
+    var path = Path.Combine(repo, "packaging", "settings_descriptor.json");
+    using var doc = JsonDocument.Parse(File.ReadAllText(path));
+
+    var defaults = new SyntheticConfig();
+    var props = typeof(SyntheticConfig).GetProperties();
+
+    foreach (JsonElement entry in doc.RootElement.GetProperty("settings").EnumerateArray())
+    {
+        string key = entry.GetProperty("key").GetString()!;
+        var prop = props.FirstOrDefault(p => p.Name == key)
+            ?? throw new InvalidOperationException("Descriptor key has no config property: " + key);
+
+        if (!entry.TryGetProperty("default", out JsonElement declared))
+        {
+            continue;
+        }
+
+        object? actual = prop.GetValue(defaults);
+        string actualText = actual switch
+        {
+            null => string.Empty,
+            bool b => b ? "true" : "false",
+            float f => f.ToString("0.####", CultureInfo.InvariantCulture),
+            _ => Convert.ToString(actual, CultureInfo.InvariantCulture) ?? string.Empty,
+        };
+        string declaredText = declared.ValueKind switch
+        {
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.Number => declared.GetDouble().ToString("0.####", CultureInfo.InvariantCulture),
+            _ => declared.GetString() ?? string.Empty,
+        };
+
+        if (!string.Equals(actualText, declaredText, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Descriptor default for {key} is {declaredText} but SyntheticConfig uses {actualText}.");
+        }
+    }
 }
 
 static void PackageDependenciesAreAllowed()
