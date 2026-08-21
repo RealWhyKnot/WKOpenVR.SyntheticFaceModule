@@ -35,7 +35,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
     private readonly MouthSolver _mouth = new();
     private readonly NoiseFloorTracker _noiseFloor = new();
     private readonly SpeechActivityDetector _vad = new();
-    private readonly EmotionColoringLayer _coloring = new();
+    private readonly EmotionColoringLayer _coloring;
     private readonly SyntheticFrameMixer _mixer = new();
     private readonly float[] _mouthBuffer = new float[FaceExpressionCount.Value];
     private readonly float[] _emotionBuffer = new float[FaceExpressionCount.Value];
@@ -62,6 +62,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
     public SyntheticFaceModule()
     {
         _rng = new Random();
+        _coloring = new EmotionColoringLayer(new Random(_rng.Next()));
         _config = new SyntheticConfig();
         _configIsFixed = false;
     }
@@ -71,6 +72,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
     {
         _injectedSource = source;
         _rng = rng ?? new Random(12345);
+        _coloring = new EmotionColoringLayer(new Random(_rng.Next()));
         _config = config ?? new SyntheticConfig();
         _configIsFixed = config is not null;
     }
@@ -79,7 +81,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
         "4df7850f-1d75-4665-9eab-6f07e0f3b5dc",
         "WKOpenVR Synthetic Face Module",
         "WhyKnot",
-        new Version(0, 3, 0));
+        new Version(0, 4, 0));
 
     public FaceModuleCapabilities Capabilities =>
         FaceModuleCapabilities.Eye | FaceModuleCapabilities.Expression | FaceModuleCapabilities.AudioInput;

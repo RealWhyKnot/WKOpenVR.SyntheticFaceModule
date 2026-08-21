@@ -28,11 +28,9 @@ public sealed class SyntheticConfig
     /// <summary>Scales the emotion coloring caps. 0 disables, 1 = full design caps.</summary>
     public float EmotionIntensity { get; set; } = 1.0f;
 
-    /// <summary>
-    /// Scales the valence-driven smile/frown channel on the mouth corners. 0 disables it
-    /// (restoring the pre-0.3 behavior of never moving the corners), 1 = calibrated amplitudes.
-    /// </summary>
-    public float SmileIntensity { get; set; } = 1.0f;
+    // Scales the episodic smile on the mouth corners. Defaults to 0: audio cannot tell when someone
+    // is smiling, so the corners stay still unless the user opts in. 1 = calibrated amplitudes.
+    public float SmileIntensity { get; set; }
 
     /// <summary>Scales the mouth output. 1 = nominal.</summary>
     public float MouthIntensity { get; set; } = 1.0f;

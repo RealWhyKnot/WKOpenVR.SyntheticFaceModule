@@ -38,22 +38,11 @@ public sealed class SyntheticFrameMixer
             float[] expr = frame.Expressions;
             for (int i = 0; i < expr.Length; i++)
             {
-                float value = 0f;
-                if (useMouth)
-                {
-                    value += mouth![i];
-                }
-
-                if (useEmotion)
-                {
-                    value += emotion![i];
-                }
-
-                if (useIdle)
-                {
-                    value += idle![i];
-                }
-
+                // Emotion and idle overlap on brow, squint, and corner shapes. Summing them let a
+                // real expression and its idle jitter saturate the same shape, losing both; the
+                // stronger one wins instead. Mouth shares no shape with either, so it adds.
+                float coloring = Math.Max(useEmotion ? emotion![i] : 0f, useIdle ? idle![i] : 0f);
+                float value = (useMouth ? mouth![i] : 0f) + coloring;
                 expr[i] = Math.Clamp(value, 0f, 1f);
             }
 

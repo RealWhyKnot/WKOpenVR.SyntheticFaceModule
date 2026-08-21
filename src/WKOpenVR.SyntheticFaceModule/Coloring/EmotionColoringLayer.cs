@@ -3,131 +3,174 @@ using WKOpenVR.SyntheticFaceModule.Prosody;
 
 namespace WKOpenVR.SyntheticFaceModule.Coloring;
 
-/// <summary>
-/// Maps a <see cref="ProsodyState"/> to additive expression offsets. Two tiers: subtle
-/// brow/cheek/eye coloring with hard low caps, and a full-range smile/frown channel on the
-/// mouth corners tuned to real face-tracking recordings (smiles reach 1.0 with a ~0.3 s
-/// rise and a slow multi-second release; frowns are brief low microexpressions). Positive
-/// valence also raises cheek and eye squint with the smile, matching how real smiles
-/// engage the whole face. Everything is confidence-gated and clamped, and the layer never
-/// writes viseme-critical shapes: jaw, MouthClosed, funnel, pucker, stretch, tightener,
-/// and the upper/lower lip openers stay owned by the audio mouth solver.
-/// </summary>
+// Maps prosody to additive expression offsets. Two tiers: subtle arousal-driven brow/eye coloring
+// with hard low caps, and an episodic smile on the mouth corners.
+//
+// Smile is deliberately NOT driven by valence. Valence recovery from audio alone sits near chance
+// while arousal is recoverable, so a valence-tracking smile just follows vocal timbre: brighter
+// sibilants read as happy, loud speech reads as sad. Instead the corners run as discrete episodes
+// whose rate scales with speech and arousal, shaped to the timings measured from hardware
+// recordings (0.7 episodes/min, ~0.55 s onset, ~5.3 s duration, ~2.3 s offset, peaks near 1.0).
+//
+// The layer never writes viseme-critical shapes: jaw, MouthClosed, funnel, pucker, stretch, and the
+// upper/lower lip openers stay owned by the audio mouth solver.
 public sealed class EmotionColoringLayer
 {
     private const float ConfidenceGate = 0.25f;
     private const float AttackSeconds = 0.2f;
     private const float DecaySeconds = 1.5f;
 
-    private const float SmileCap = 1.0f;
-    private const float SmileAttackSeconds = 0.30f;
-    private const float SmileDecaySeconds = 1.8f;
-    private const float SmileOnsetValence = 0.05f;
-    private const float SmileFullValence = 0.45f;
+    private const float EpisodesPerMinute = 0.7f;
+    private const float OnsetSeconds = 0.55f;
+    private const float OffsetSeconds = 2.3f;
+    private const float DurationMinSeconds = 3.0f;
+    private const float DurationMaxSeconds = 8.0f;
+    private const float PeakMin = 0.50f;
+    private const float PeakMax = 1.00f;
+
     private const float DimpleRatio = 0.37f;
     private const float CheekSmileRatio = 0.55f;
     private const float EyeSquintSmileRatio = 0.35f;
 
-    private const float FrownCap = 0.5f;
-    private const float FrownAttackSeconds = 0.06f;
-    private const float FrownDecaySeconds = 0.35f;
-    private const float FrownOnsetValence = 0.15f;
-    private const float FrownFullValence = 0.55f;
-
     private static readonly FaceExpression[] SubtleShapes =
     {
-        FaceExpression.CheekSquintRight,
-        FaceExpression.CheekSquintLeft,
-        FaceExpression.EyeSquintRight,
-        FaceExpression.EyeSquintLeft,
-        FaceExpression.BrowInnerUpRight,
-        FaceExpression.BrowInnerUpLeft,
         FaceExpression.BrowOuterUpRight,
         FaceExpression.BrowOuterUpLeft,
         FaceExpression.EyeWideRight,
         FaceExpression.EyeWideLeft,
-        FaceExpression.BrowLowererRight,
-        FaceExpression.BrowLowererLeft,
     };
 
-    private static readonly FaceExpression[] SmileShapes =
-    {
-        FaceExpression.MouthCornerPullRight,
-        FaceExpression.MouthCornerPullLeft,
-        FaceExpression.MouthCornerSlantRight,
-        FaceExpression.MouthCornerSlantLeft,
-        FaceExpression.MouthDimpleRight,
-        FaceExpression.MouthDimpleLeft,
-    };
-
-    private static readonly FaceExpression[] FrownShapes =
-    {
-        FaceExpression.MouthFrownRight,
-        FaceExpression.MouthFrownLeft,
-    };
-
+    private readonly Random _rng;
     private readonly float[] _smoothed = new float[FaceExpressionCount.Value];
     private readonly float[] _target = new float[FaceExpressionCount.Value];
 
-    /// <summary>Clears <paramref name="offsets"/> and writes the smoothed additive coloring into it.</summary>
+    private float _secondsToNextEpisode = -1f;
+    private float _secondsIntoEpisode = -1f;
+    private float _episodeDuration;
+    private float _episodePeak;
+
+    public EmotionColoringLayer(Random rng)
+    {
+        _rng = rng;
+    }
+
+    // Diagnostics: the smile envelope produced this frame, after intensity scaling.
+    public float LastSmileEnvelope { get; private set; }
+
+    // Clears offsets and writes the additive coloring into it.
     public void Apply(ProsodyState prosody, float intensity, float smileIntensity, float dtSeconds, float[] offsets)
     {
         Array.Clear(offsets);
         Array.Clear(_target);
 
-        float gate = prosody.SpeechActive && prosody.Confidence >= ConfidenceGate
+        // Gated on confidence only. Gating on SpeechActive as well put a cliff at every pause: the
+        // whole face snapped toward neutral the moment the mic went quiet. Confidence already decays.
+        float gate = prosody.Confidence >= ConfidenceGate
             ? prosody.Confidence * Math.Clamp(intensity, 0f, 1f)
             : 0f;
 
-        float v = prosody.Valence;
-        float a = prosody.Arousal;
-        float positive = Math.Clamp(v, 0f, 1f);
-        float negative = Math.Clamp(-v, 0f, 1f);
-        float arousalHigh = Math.Clamp((a - 0.5f) * 2f, 0f, 1f);
+        float arousalHigh = Math.Clamp((prosody.Arousal - 0.5f) * 2f, 0f, 1f);
 
-        // The heuristic estimator caps valence well below 1, so shape the smile drive to
-        // reach full amplitude at a moderately positive valence; real smiles saturate.
-        float smile = Math.Clamp(smileIntensity, 0f, 1f);
-        float smileDrive = gate * SmoothStep(SmileOnsetValence, SmileFullValence, positive) * smile;
-        float frownDrive = gate * SmoothStep(FrownOnsetValence, FrownFullValence, negative) * smile;
-
-        SetTarget(FaceExpression.CheekSquintRight, Math.Max(gate * positive * 0.18f, smileDrive * CheekSmileRatio));
-        SetTarget(FaceExpression.CheekSquintLeft, Math.Max(gate * positive * 0.18f, smileDrive * CheekSmileRatio));
-        SetTarget(FaceExpression.EyeSquintRight, Math.Max(gate * positive * 0.12f, smileDrive * EyeSquintSmileRatio));
-        SetTarget(FaceExpression.EyeSquintLeft, Math.Max(gate * positive * 0.12f, smileDrive * EyeSquintSmileRatio));
-
-        SetTarget(FaceExpression.BrowInnerUpRight, gate * negative * 0.18f);
-        SetTarget(FaceExpression.BrowInnerUpLeft, gate * negative * 0.18f);
-
-        SetTarget(FaceExpression.BrowOuterUpRight, gate * arousalHigh * 0.18f * (v >= 0f ? 1f : 0.4f));
-        SetTarget(FaceExpression.BrowOuterUpLeft, gate * arousalHigh * 0.18f * (v >= 0f ? 1f : 0.4f));
-        SetTarget(FaceExpression.EyeWideRight, gate * arousalHigh * 0.14f * (v >= 0f ? 1f : 0.6f));
-        SetTarget(FaceExpression.EyeWideLeft, gate * arousalHigh * 0.14f * (v >= 0f ? 1f : 0.6f));
-
-        SetTarget(FaceExpression.BrowLowererRight, gate * arousalHigh * negative * 0.18f);
-        SetTarget(FaceExpression.BrowLowererLeft, gate * arousalHigh * negative * 0.18f);
-
-        // Corner slant tracks corner pull one-to-one and dimples follow at a fixed ratio,
-        // mirroring how hardware trackers report smiles.
-        SetTarget(FaceExpression.MouthCornerPullRight, smileDrive * SmileCap);
-        SetTarget(FaceExpression.MouthCornerPullLeft, smileDrive * SmileCap);
-        SetTarget(FaceExpression.MouthCornerSlantRight, smileDrive * SmileCap);
-        SetTarget(FaceExpression.MouthCornerSlantLeft, smileDrive * SmileCap);
-        SetTarget(FaceExpression.MouthDimpleRight, smileDrive * DimpleRatio);
-        SetTarget(FaceExpression.MouthDimpleLeft, smileDrive * DimpleRatio);
-
-        SetTarget(FaceExpression.MouthFrownRight, frownDrive * FrownCap);
-        SetTarget(FaceExpression.MouthFrownLeft, frownDrive * FrownCap);
+        SetTarget(FaceExpression.BrowOuterUpRight, gate * arousalHigh * 0.18f);
+        SetTarget(FaceExpression.BrowOuterUpLeft, gate * arousalHigh * 0.18f);
+        SetTarget(FaceExpression.EyeWideRight, gate * arousalHigh * 0.14f);
+        SetTarget(FaceExpression.EyeWideLeft, gate * arousalHigh * 0.14f);
 
         Smooth(SubtleShapes, dtSeconds, AttackSeconds, DecaySeconds, offsets);
-        Smooth(SmileShapes, dtSeconds, SmileAttackSeconds, SmileDecaySeconds, offsets);
-        Smooth(FrownShapes, dtSeconds, FrownAttackSeconds, FrownDecaySeconds, offsets);
+
+        float smile = UpdateSmileEpisode(prosody, dtSeconds) * Math.Clamp(smileIntensity, 0f, 1f);
+        LastSmileEnvelope = smile;
+        if (smile <= 0f)
+        {
+            return;
+        }
+
+        // Corner slant tracks corner pull one-to-one and dimples follow at a fixed ratio, mirroring
+        // how hardware trackers report smiles; cheek and eye squint are the Duchenne pairing.
+        offsets[(int)FaceExpression.MouthCornerPullRight] = smile;
+        offsets[(int)FaceExpression.MouthCornerPullLeft] = smile;
+        offsets[(int)FaceExpression.MouthCornerSlantRight] = smile;
+        offsets[(int)FaceExpression.MouthCornerSlantLeft] = smile;
+        offsets[(int)FaceExpression.MouthDimpleRight] = smile * DimpleRatio;
+        offsets[(int)FaceExpression.MouthDimpleLeft] = smile * DimpleRatio;
+        offsets[(int)FaceExpression.CheekSquintRight] = smile * CheekSmileRatio;
+        offsets[(int)FaceExpression.CheekSquintLeft] = smile * CheekSmileRatio;
+        offsets[(int)FaceExpression.EyeSquintRight] = smile * EyeSquintSmileRatio;
+        offsets[(int)FaceExpression.EyeSquintLeft] = smile * EyeSquintSmileRatio;
     }
 
     public void Reset()
     {
         Array.Clear(_smoothed);
         Array.Clear(_target);
+        _secondsToNextEpisode = -1f;
+        _secondsIntoEpisode = -1f;
+        _episodeDuration = 0f;
+        _episodePeak = 0f;
+        LastSmileEnvelope = 0f;
+    }
+
+    private float UpdateSmileEpisode(ProsodyState prosody, float dtSeconds)
+    {
+        if (_secondsIntoEpisode >= 0f)
+        {
+            _secondsIntoEpisode += dtSeconds;
+            if (_secondsIntoEpisode >= _episodeDuration)
+            {
+                _secondsIntoEpisode = -1f;
+                ScheduleNextEpisode();
+                return 0f;
+            }
+
+            return Envelope(_secondsIntoEpisode, _episodeDuration) * _episodePeak;
+        }
+
+        if (_secondsToNextEpisode < 0f)
+        {
+            ScheduleNextEpisode();
+        }
+
+        // Smiles co-occur positively with speech (0.380 mean speaking vs 0.030 quiet), so the clock
+        // only advances while talking, faster when animated.
+        if (!prosody.SpeechActive)
+        {
+            return 0f;
+        }
+
+        _secondsToNextEpisode -= dtSeconds * (0.3f + (1.4f * Math.Clamp(prosody.Arousal, 0f, 1f)));
+        if (_secondsToNextEpisode > 0f)
+        {
+            return 0f;
+        }
+
+        _secondsIntoEpisode = 0f;
+        _episodeDuration = Lerp(DurationMinSeconds, DurationMaxSeconds, (float)_rng.NextDouble());
+        _episodePeak = Lerp(PeakMin, PeakMax, (float)_rng.NextDouble());
+        return 0f;
+    }
+
+    private void ScheduleNextEpisode()
+    {
+        float meanGapSeconds = 60f / EpisodesPerMinute;
+        double u = Math.Max(1e-6, _rng.NextDouble());
+        _secondsToNextEpisode = (float)(-Math.Log(u) * meanGapSeconds);
+    }
+
+    private static float Envelope(float t, float duration)
+    {
+        float offsetStart = Math.Max(OnsetSeconds, duration - OffsetSeconds);
+        if (t < OnsetSeconds)
+        {
+            return SmoothStep01(t / OnsetSeconds);
+        }
+
+        if (t < offsetStart)
+        {
+            return 1f;
+        }
+
+        float fall = (t - offsetStart) / Math.Max(0.001f, duration - offsetStart);
+        return 1f - SmoothStep01(fall);
     }
 
     private void Smooth(
@@ -150,14 +193,16 @@ public sealed class EmotionColoringLayer
         _target[(int)shape] = Math.Clamp(value, 0f, 1f);
     }
 
+    private static float Lerp(float a, float b, float t) => a + ((b - a) * t);
+
     private static float Coefficient(float dtSeconds, float tauSeconds)
     {
         return dtSeconds <= 0f || tauSeconds <= 0f ? 1f : 1f - MathF.Exp(-dtSeconds / tauSeconds);
     }
 
-    private static float SmoothStep(float edge0, float edge1, float x)
+    private static float SmoothStep01(float x)
     {
-        float t = Math.Clamp((x - edge0) / (edge1 - edge0), 0f, 1f);
+        float t = Math.Clamp(x, 0f, 1f);
         return t * t * (3f - (2f * t));
     }
 }

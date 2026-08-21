@@ -4,33 +4,51 @@ using WKOpenVR.SyntheticFaceModule.Dsp;
 
 namespace WKOpenVR.SyntheticFaceModule.Mouth;
 
-/// <summary>
-/// Two-stage mouth: a dt-aware jaw envelope (driven by VAD activity, fast attack / slow release)
-/// gates a blended broad-viseme classifier whose smoothed group weights (coarticulation) shape the
-/// lips. Writes only mouth/jaw indices into the supplied 88-length expression buffer; everything
-/// else is zeroed so the mixer can layer emotion on top. Pure and deterministic.
-/// </summary>
+// Two-stage mouth: a dt-aware jaw envelope (driven by VAD activity, fast attack / slow release)
+// gates a blended broad-viseme classifier. The jaw uses the blended group weights; the lips use a
+// single winning posture, because rounding and spreading are mutually exclusive in real tracker
+// output (0 co-active frames in 77851 sampled Virtual Desktop frames). Writes only mouth/jaw
+// indices into the supplied 88-length expression buffer; everything else is zeroed so the mixer can
+// layer emotion on top.
 public sealed class MouthSolver
 {
     private const float GroupSmoothingSeconds = 0.04f;
-    private const float MouthCloseCap = 0.35f;
+    private const float MouthCloseCap = 0.25f;
+
+    // A posture must actually dominate before it drives the lips. Real trackers hold funnel/pucker
+    // above 0.10 in well under 1% of frames, so an ungated blend is wrong by orders of magnitude.
+    private const float PostureFloor = 0.12f;
+    private const float PostureMargin = 1.25f;
+    private const float PostureMinDwellSeconds = 0.04f;
+
+    // Bilabial closure shows up as an energy dip inside an utterance, not at its onset.
+    private const float ClosureContextSeconds = 0.40f;
+    private const float ClosureContextMin = 0.35f;
+    private const float ClosureDipMin = 0.35f;
 
     private readonly AsymmetricSmoother _jaw = new(attackSeconds: 0.02f, releaseSeconds: 0.09f);
-    private readonly AsymmetricSmoother _mouthClosed = new(attackSeconds: 0.015f, releaseSeconds: 0.05f);
+    private readonly AsymmetricSmoother _mouthClosed = new(attackSeconds: 0.025f, releaseSeconds: 0.12f);
     private readonly BroadVisemeClassifier _classifier = new();
 
     private float _open;
     private float _front;
     private float _rounded;
     private float _fricative;
+    private LipPosture _posture;
+    private float _postureHeldSeconds;
+    private float _speechContext;
 
-    /// <summary>Diagnostics: the most recent solved jaw-open weight.</summary>
+    private enum LipPosture
+    {
+        None,
+        Rounded,
+        Front,
+    }
+
     public float LastJawOpen { get; private set; }
 
-    /// <summary>Diagnostics: the most recent solved mouth-closed weight.</summary>
     public float LastMouthClosed { get; private set; }
 
-    /// <summary>Diagnostics: smoothed broad-viseme group weights from the last solve.</summary>
     public float LastOpenWeight => _open;
 
     public float LastFrontWeight => _front;
@@ -39,23 +57,23 @@ public sealed class MouthSolver
 
     public float LastFricativeWeight => _fricative;
 
-    /// <summary>
-    /// Fills <paramref name="expressions"/> (length 88) with mouth shapes for this frame.
-    /// <paramref name="activity"/> is the VAD speech strength 0..1; <paramref name="intensity"/>
-    /// scales the output (config MouthIntensity).
-    /// </summary>
+    // Fills `expressions` (length 88) with mouth shapes for this frame. `activity` is the VAD speech
+    // strength 0..1; `intensity` scales the output (config MouthIntensity).
     public void Solve(AudioAnalysisFrame frame, float activity, float dtSeconds, float intensity, float[] expressions)
     {
         Array.Clear(expressions);
 
-        float jaw = _jaw.Update(Math.Clamp(activity, 0f, 1f), dtSeconds);
+        activity = Math.Clamp(activity, 0f, 1f);
+        float jaw = _jaw.Update(activity, dtSeconds);
 
         VisemeWeights groups = _classifier.Classify(frame, activity);
-        float k = SmoothingCoefficient(dtSeconds);
+        float k = Coefficient(dtSeconds, GroupSmoothingSeconds);
         _open += (groups.Open - _open) * k;
         _front += (groups.Front - _front) * k;
         _rounded += (groups.Rounded - _rounded) * k;
         _fricative += (groups.Fricative - _fricative) * k;
+
+        UpdatePosture(dtSeconds);
 
         float openFactor = Math.Clamp(
             0.55f + (0.45f * _open) - (0.25f * _rounded) - (0.35f * _front) - (0.40f * _fricative),
@@ -63,12 +81,17 @@ public sealed class MouthSolver
             1.0f);
 
         float jawOpen = jaw * openFactor;
-        float closureCandidate = Math.Clamp(activity - (jaw * 1.8f), 0f, 1f);
-        float mouthClosed = _mouthClosed.Update(closureCandidate * MouthCloseCap, dtSeconds);
-        float funnel = jaw * _rounded * 0.60f;
-        float pucker = jaw * _rounded * 0.45f;
-        float stretch = jaw * ((_front * 0.55f) + (_fricative * 0.35f));
-        float tightener = jaw * _fricative * 0.40f;
+
+        _speechContext += (activity - _speechContext) * Coefficient(dtSeconds, ClosureContextSeconds);
+        float dip = _speechContext >= ClosureContextMin ? Math.Clamp(_speechContext - activity, 0f, 1f) : 0f;
+        float mouthClosed = _mouthClosed.Update(dip >= ClosureDipMin ? dip * MouthCloseCap : 0f, dtSeconds);
+
+        float rounding = _posture == LipPosture.Rounded ? _rounded : 0f;
+        float spreading = _posture == LipPosture.Front ? _front : 0f;
+
+        float funnel = jaw * rounding * 0.60f;
+        float pucker = jaw * rounding * 0.45f;
+        float stretch = jaw * spreading * 0.55f;
         // Lip-opener ratios measured from hardware recordings over speaking frames:
         // upper lip rises at ~0.65x jaw and the lower lip drops at ~0.52x.
         float upperUp = jawOpen * 0.65f;
@@ -89,9 +112,6 @@ public sealed class MouthSolver
 
         Set(expressions, FaceExpression.MouthStretchRight, stretch, intensity);
         Set(expressions, FaceExpression.MouthStretchLeft, stretch, intensity);
-
-        Set(expressions, FaceExpression.MouthTightenerRight, tightener, intensity);
-        Set(expressions, FaceExpression.MouthTightenerLeft, tightener, intensity);
 
         // Hardware trackers report UpperDeepen locked to UpperUp; mirror the pairing.
         Set(expressions, FaceExpression.MouthUpperUpRight, upperUp, intensity);
@@ -114,8 +134,45 @@ public sealed class MouthSolver
         _front = 0f;
         _rounded = 0f;
         _fricative = 0f;
+        _posture = LipPosture.None;
+        _postureHeldSeconds = 0f;
+        _speechContext = 0f;
         LastJawOpen = 0f;
         LastMouthClosed = 0f;
+    }
+
+    private void UpdatePosture(float dtSeconds)
+    {
+        _postureHeldSeconds += dtSeconds;
+
+        LipPosture challenger = _rounded >= _front ? LipPosture.Rounded : LipPosture.Front;
+        float challengerWeight = Math.Max(_rounded, _front);
+
+        if (challengerWeight < PostureFloor)
+        {
+            if (_posture != LipPosture.None)
+            {
+                _posture = LipPosture.None;
+                _postureHeldSeconds = 0f;
+            }
+
+            return;
+        }
+
+        if (challenger == _posture)
+        {
+            return;
+        }
+
+        float incumbentWeight = _posture == LipPosture.Rounded ? _rounded : _front;
+        if (_posture != LipPosture.None &&
+            (_postureHeldSeconds < PostureMinDwellSeconds || challengerWeight < incumbentWeight * PostureMargin))
+        {
+            return;
+        }
+
+        _posture = challenger;
+        _postureHeldSeconds = 0f;
     }
 
     private static void Set(float[] expressions, FaceExpression expression, float value, float intensity)
@@ -123,8 +180,8 @@ public sealed class MouthSolver
         expressions[(int)expression] = Math.Clamp(value * intensity, 0f, 1f);
     }
 
-    private static float SmoothingCoefficient(float dtSeconds)
+    private static float Coefficient(float dtSeconds, float tauSeconds)
     {
-        return dtSeconds <= 0f ? 1f : 1f - MathF.Exp(-dtSeconds / GroupSmoothingSeconds);
+        return dtSeconds <= 0f ? 1f : 1f - MathF.Exp(-dtSeconds / tauSeconds);
     }
 }

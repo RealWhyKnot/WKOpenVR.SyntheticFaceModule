@@ -63,6 +63,12 @@ These pairs move identically, so synthetic output should mirror them for a match
 - `MouthUpperDeepen* = MouthUpperUp*` (ratio 1.0)
 - `BrowPinch* = BrowLowerer*` (ratio 1.0)
 
+Mutually exclusive: rounding (`LipFunnel*`, `LipPucker*`) never co-occurs with spreading
+(`MouthStretch*`). Over 77,851 sampled frames, funnel-and-stretch above 0.10 together: 0 frames;
+pucker-and-stretch: 0 frames. Funnel and pucker are NOT antagonists -- they co-occur in 81 frames,
+about half of all funnel-active frames, so treat them as one rounding posture. Duty cycles are low:
+funnel 0.22%, pucker 0.29%, stretch 3.28%, tightener 0.31% of frames above 0.10.
+
 Companion ratios during smiles: `MouthDimple ~= 0.37 x MouthCornerPull`,
 `CheekSquint` rises with smile (Duchenne pairing; per-session mean up to 0.15,
 p95 up to 0.96 -- far above any small coloring cap).
