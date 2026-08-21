@@ -6,7 +6,8 @@ The `release.yml` body for each tag is composed mechanically from the commit sli
 
 ## Unreleased
 
-_No notable changes since the last release._
+### Fixed
+- **module:** Drive only shape combinations a real face can hold (0a7f9e1)
 
 ---
 
