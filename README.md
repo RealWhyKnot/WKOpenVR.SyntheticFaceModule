@@ -38,7 +38,8 @@ missing fields fall back to the defaults below.
 | `EngagementEnabled` / `EngagementGain` | `true` / `1.0` | Eye widen while speech stays animated. |
 | `HesitationEnabled` / `HesitationGain` | `true` / `1.0` | Brow furrow on a flat, sustained monotone. |
 | `LaughterEnabled` / `LaughterGain` | `true` / `1.0` | Smile with cheek and eye squint on rhythmic laughter bursts. |
-| `MouthIntensity` | `0.6` | Scales the mouth output. 0.6 matches tracked jaw travel; 1.0 is the raw solver level. |
+| `MouthIntensity` | `0.4` | Scales the mouth output. 0.4 matches tracked jaw travel; 1.0 is the raw solver level. |
+| `BlinkRatePerMinute` | `15.9` | Spontaneous blinks per minute. Gaze shifts and vocal arousal still modulate it around this figure. |
 | `IdleIntensity` | `1.0` | Scales the always-on idle micro-motion (small brow/squint events while quiet; 0 disables). |
 | `MicDeviceNumber` | `-1` | Capture device index; `-1` = system default. |
 | `MicDeviceName` | `null` | Prefer the first capture device whose name contains this text (overrides the index when matched). |

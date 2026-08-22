@@ -30,6 +30,14 @@ public sealed class MouthSolver
     // Prior spread of the 0..1 centroid scale (~380 Hz) until the speaker's own window fills.
     private const float CentroidPriorVariance = 0.01f;
 
+    // The envelope smoothers decay exponentially, so they approach zero without reaching it and
+    // every mouth shape stays faintly non-zero between words (90.9% of frames over a tracked
+    // session), which reads as a permanent mumble. Rescale the remainder instead of hard-gating it
+    // so the output cannot chatter across the threshold.
+    private const float ActivityRestFloor = 0.06f;
+    private const float JawRestFloor = 0.10f;
+    private const float MouthClosedRestFloor = 0.02f;
+
     private readonly AsymmetricSmoother _jaw = new(attackSeconds: 0.02f, releaseSeconds: 0.09f);
     private readonly AsymmetricSmoother _mouthClosed = new(attackSeconds: 0.025f, releaseSeconds: 0.12f);
     private readonly BroadVisemeClassifier _classifier = new();
@@ -68,8 +76,8 @@ public sealed class MouthSolver
     {
         Array.Clear(expressions);
 
-        activity = Math.Clamp(activity, 0f, 1f);
-        float jaw = _jaw.Update(activity, dtSeconds);
+        activity = RestKnee(Math.Clamp(activity, 0f, 1f), ActivityRestFloor);
+        float jaw = RestKnee(_jaw.Update(activity, dtSeconds), JawRestFloor);
 
         float centroidZ = 0f;
         if (frame.Voiced && activity > 0f)
@@ -96,7 +104,9 @@ public sealed class MouthSolver
 
         _speechContext += (activity - _speechContext) * Coefficient(dtSeconds, ClosureContextSeconds);
         float dip = _speechContext >= ClosureContextMin ? Math.Clamp(_speechContext - activity, 0f, 1f) : 0f;
-        float mouthClosed = _mouthClosed.Update(dip >= ClosureDipMin ? dip * MouthCloseCap : 0f, dtSeconds);
+        float mouthClosed = RestKnee(
+            _mouthClosed.Update(dip >= ClosureDipMin ? dip * MouthCloseCap : 0f, dtSeconds),
+            MouthClosedRestFloor);
 
         float rounding = _posture == LipPosture.Rounded ? _rounded : 0f;
         float spreading = _posture == LipPosture.Front ? _front : 0f;
@@ -186,6 +196,9 @@ public sealed class MouthSolver
         _posture = challenger;
         _postureHeldSeconds = 0f;
     }
+
+    private static float RestKnee(float value, float floor) =>
+        value <= floor ? 0f : (value - floor) / (1f - floor);
 
     private static void Set(float[] expressions, FaceExpression expression, float value, float intensity)
     {

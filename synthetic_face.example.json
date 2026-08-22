@@ -30,8 +30,12 @@
   "LaughterEnabled": true,
   "LaughterGain": 1.0,
 
-  // Scales the mouth output amount. 0.6 matches tracked jaw travel; 1 is the raw solver level.
-  "MouthIntensity": 0.6,
+  // Scales the mouth output amount. 0.4 matches tracked jaw travel; 1 is the raw solver level.
+  "MouthIntensity": 0.4,
+
+  // Spontaneous blink rate. 15.9 is the pooled rate measured from tracked sessions; gaze shifts and
+  // vocal arousal still modulate it around this figure.
+  "BlinkRatePerMinute": 15.9,
 
   // Scales the always-on idle micro-motion (small brow/squint events while quiet).
   // 0 disables it; 1 matches rates and amplitudes measured from real tracker recordings.

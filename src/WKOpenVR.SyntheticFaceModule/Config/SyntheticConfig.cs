@@ -50,7 +50,13 @@ public sealed class SyntheticConfig
     public float LaughterGain { get; set; } = 1.0f;
 
     /// <summary>Scales the mouth output. 1 = nominal.</summary>
-    public float MouthIntensity { get; set; } = 0.6f;
+    public float MouthIntensity { get; set; } = 0.4f;
+
+    /// <summary>
+    /// Spontaneous blink rate. The default is the pooled rate measured from tracked sessions;
+    /// gaze shifts and arousal still modulate it around this figure.
+    /// </summary>
+    public float BlinkRatePerMinute { get; set; } = 15.9f;
 
     /// <summary>
     /// Scales the always-on idle micro-motion (small brow/squint events during quiet).

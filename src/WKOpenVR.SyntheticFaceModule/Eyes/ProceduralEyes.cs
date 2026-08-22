@@ -24,6 +24,14 @@ public sealed class ProceduralEyes
     /// <summary>Half the pupil's arousal travel; full span stays inside the advertised 3-5 mm.</summary>
     private const float PupilArousalSwingMm = 0.8f;
 
+    // Orbicularis oculi fires with 97% of saccadic gaze shifts larger than 33 degrees, and with
+    // almost none of the small ones that make up seated conversation. Gaze here is normalized as
+    // tan(angle) -- the driver folds it to (x, y, -1) -- so 33 degrees is tan(33) = 0.65. Gating on
+    // amplitude rather than on a low per-saccade probability is what keeps this from becoming the
+    // blink clock: saccades start ~130 times a minute.
+    private const float BlinkSaccadeAmplitudeMin = 0.65f;
+    private const float BlinkSaccadeProbability = 0.97f;
+
     // Occasional eyelid droop episodes: real lids rest at 1.0 almost always, but sag a
     // little every half minute or so instead of staying pinned open forever.
     private const float DroopEventsPerMinute = 2.0f;
@@ -50,10 +58,14 @@ public sealed class ProceduralEyes
         _droopCountdown = NextDroopGap();
     }
 
-    public EyeOutput Update(float dtSeconds, float arousal = 0f)
+    public EyeOutput Update(float dtSeconds, float arousal = 0f, float blinksPerMinute = 15.9f)
     {
+        _blink.BlinksPerMinute = blinksPerMinute;
+
         _gaze.Update(dtSeconds, arousal);
-        if (_gaze.SaccadeStarted)
+        if (_gaze.SaccadeStarted
+            && _gaze.SaccadeAmplitude >= BlinkSaccadeAmplitudeMin
+            && _rng.NextDouble() < BlinkSaccadeProbability)
         {
             _blink.RequestBlinkSoon();
         }

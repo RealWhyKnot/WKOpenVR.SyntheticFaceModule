@@ -24,6 +24,7 @@ var tests = new (string Name, Action Body)[]
     ("VAD opens on loud signal", VadOpensOnLoudSignal),
     ("Asymmetric smoother attack faster than release", SmootherAttackFasterThanRelease),
     ("Mouth is neutral on silence", MouthNeutralOnSilence),
+    ("Mouth rests between utterances", MouthRestsBetweenUtterances),
     ("Mouth opens on loud vowel", MouthOpensOnLoudVowel),
     ("Mouth lip openers follow jaw", MouthLipOpenersFollowJaw),
     ("Fricative damps jaw without a lip posture", FricativeDampsJawWithoutLipPosture),
@@ -55,6 +56,8 @@ var tests = new (string Name, Action Body)[]
     ("Mixer omits eye flag when no eyes", MixerOmitsEyeFlag),
     ("Mixer sets symmetric eyes", MixerSetsSymmetricEyes),
     ("Blink closes faster than it opens", BlinkClosesFasterThanOpens),
+    ("Blink rate stays in the tracked band", BlinkRateIsNatural),
+    ("Blink rate follows the configured rate", BlinkRateFollowsConfig),
     ("Gaze stays within cone", GazeStaysWithinCone),
     ("Saccades are paced fast", SaccadesArePacedFast),
     ("Procedural eyes are bounded", ProceduralEyesBounded),
@@ -529,7 +532,14 @@ static ScriptedAudio EngagementScript() => new ScriptedAudio().Speech(1.5f).Spee
 
 static ScriptedAudio HesitationScript() => new ScriptedAudio().Speech(2f).Monotone(1.2f).Silence(1f);
 
-static ScriptedAudio LaughterScript() => new ScriptedAudio().Speech(2f).Pulses(1.2f, 5f).Silence(1.5f);
+// Real laughter runs well above the speaker's modal pitch and louder than the speech around it.
+// Pulsing at the same pitch and level is just rhythmic speech, which shares the same 4-6 Hz
+// syllable rate; RhythmicSpeechScript covers that as the negative case.
+static ScriptedAudio LaughterScript() =>
+    new ScriptedAudio().Speech(2f).Pulses(1.2f, 5f, rms: 0.22f, pitch: 300f).Silence(1.5f);
+
+static ScriptedAudio RhythmicSpeechScript() =>
+    new ScriptedAudio().Speech(2f).Pulses(1.2f, 5f).Silence(1.5f);
 
 static void DetectorFlagsOnlyTheScriptedEvent()
 {
@@ -538,7 +548,10 @@ static void DetectorFlagsOnlyTheScriptedEvent()
     AssertEvents("emphasis", RunDetector(EmphasisScript(), 0f), emphasis: -1);
     AssertEvents("engagement", RunDetector(new ScriptedAudio().Speech(3f), 0.95f), engagement: 1);
     AssertEvents("hesitation", RunDetector(HesitationScript(), 0f), hesitation: 1);
-    AssertEvents("laughter", RunDetector(LaughterScript(), 0f), laughter: 1);
+    // The single emphasis is the burst's first call, before its rhythm has established -- a brow
+    // flash entering a laugh, which is what a face does anyway.
+    AssertEvents("laughter", RunDetector(LaughterScript(), 0f), emphasis: 1, laughter: 1);
+    AssertEvents("rhythmic speech", RunDetector(RhythmicSpeechScript(), 0f));
 }
 
 static void QuestionRaisesInnerBrow()
@@ -593,12 +606,38 @@ static void HesitationFurrowsBrow()
     AssertEqual(peak.Expressions[(int)FaceExpression.BrowLowererLeft], peak.Expressions[(int)FaceExpression.BrowPinchLeft]);
 }
 
+// The envelope smoothers decay exponentially, so before the rest knee every mouth shape stayed
+// faintly non-zero forever: JawOpen was non-zero in 90.9% of frames of a tracked session, mean 0.05,
+// which reads as a permanent mumble rather than speech.
+static void MouthRestsBetweenUtterances()
+{
+    List<StepRecord> run = RunScript(
+        NewModule(),
+        new ScriptedAudio().Speech(2f).Silence(2f).Speech(2f).Silence(2f));
+
+    int nonZero = run.Count(r => r.Expressions[(int)FaceExpression.JawOpen] > 0f);
+    float duty = (float)nonZero / run.Count;
+    Console.WriteLine($"  jaw duty: {duty * 100f:F1}% non-zero");
+    AssertTrue(duty < 0.55f);
+
+    // Deep in each silence the mouth must be exactly closed, not merely small.
+    AssertEqual(0f, MaxOver(run, FaceExpression.JawOpen, 3f, 4f));
+    AssertEqual(0f, MaxOver(run, FaceExpression.MouthClosed, 3f, 4f));
+    AssertEqual(0f, MaxOver(run, FaceExpression.MouthUpperUpLeft, 3f, 4f));
+    AssertEqual(0f, MaxOver(run, FaceExpression.MouthLowerDownLeft, 3f, 4f));
+}
+
 static void LaughterSmilesWithDuchenneRatios()
 {
     List<StepRecord> run = RunScript(NewModule(), LaughterScript());
-    AssertTrue(MaxOver(run, FaceExpression.MouthCornerPullLeft, 2.6f, 3.8f) >= 0.9f);
-    AssertTrue(MaxOver(run, FaceExpression.MouthCornerPullLeft, 0f, 2.6f) < IdleCeiling);
-    AssertQuiet(run, FaceExpression.BrowInnerUpLeft, FaceExpression.BrowOuterUpLeft, FaceExpression.EyeWideLeft, FaceExpression.BrowLowererLeft);
+    AssertTrue(MaxOver(run, FaceExpression.MouthCornerPullLeft, 2.4f, 3.8f) >= 0.9f);
+    AssertTrue(MaxOver(run, FaceExpression.MouthCornerPullLeft, 0f, 2.4f) < IdleCeiling);
+    AssertQuiet(run, FaceExpression.BrowInnerUpLeft, FaceExpression.EyeWideLeft, FaceExpression.BrowLowererLeft);
+
+    // Entering a laugh reads as one emphasis: the first call is a large pitch accent before the
+    // bout's rhythm has established. One flash at the emphasis peak, not a brow per call.
+    AssertCount(1, RisingEdges(run, FaceExpression.BrowOuterUpLeft), "outer-brow rising edges");
+    AssertTrue(MaxOver(run, FaceExpression.BrowOuterUpLeft, 0f, 8f) <= 0.49f);
 
     StepRecord peak = run.MaxBy(r => r.Expressions[(int)FaceExpression.MouthCornerPullLeft])!;
     float pull = peak.Expressions[(int)FaceExpression.MouthCornerPullLeft];
@@ -711,7 +750,7 @@ static ScriptedAudio MixedScript()
             .Speech(1f).Speech(0.1f, rms: 0.3f).Speech(0.9f).Silence(0.5f)
             .Speech(1.5f).Speech(1.5f, pitch: 220f).Silence(0.5f)
             .Speech(2f).Monotone(1.2f).Silence(1f)
-            .Speech(2f).Pulses(1.2f, 5f).Silence(1.5f);
+            .Speech(2f).Pulses(1.2f, 5f, rms: 0.22f, pitch: 300f).Silence(1.5f);
     }
 
     return script.Silence(16f);
@@ -807,16 +846,16 @@ static void MixedScriptRespectsInvariants()
 // intended change to the parameter stream.
 static string[] Golden() =>
 [
-    "22:0.191,50:0.159,51:0.159,44:0.157,45:0.157,46:0.157,47:0.157,10:0.047",
-    "22:0.599,50:0.497,51:0.497,44:0.491,45:0.491,46:0.491,47:0.491,10:0.135",
-    "0:0.077,1:0.077,22:0.047,50:0.039,51:0.039,44:0.038,45:0.038,46:0.038",
-    "22:0.075,50:0.063,51:0.063,44:0.062,45:0.062,46:0.062,47:0.062,8:0.030",
-    "8:0.390,9:0.390,10:0.351,11:0.351,22:0.000,50:0.000,51:0.000,44:0.000",
-    "22:0.600,50:0.498,51:0.498,44:0.492,45:0.492,46:0.492,47:0.492,29:0.000",
-    "2:0.422,3:0.422,0:0.037,1:0.037,22:0.001,50:0.001,51:0.001,44:0.000",
-    "22:0.600,50:0.498,51:0.498,44:0.492,45:0.492,46:0.492,47:0.492,8:0.059",
-    "56:1.000,57:1.000,58:1.000,59:1.000,16:0.550,17:0.550,64:0.370,65:0.370",
-    "0:0.092,1:0.092,8:0.043,9:0.043,22:0.000,50:0.000,51:0.000,44:0.000",
+    "22:0.095,50:0.079,51:0.079,44:0.078,45:0.078,46:0.078,47:0.078,0:0.000",
+    "22:0.399,50:0.331,51:0.331,44:0.327,45:0.327,46:0.327,47:0.327,10:0.135",
+    "0:0.059,1:0.059,10:0.031,11:0.031,2:0.000,3:0.000,4:0.000,5:0.000",
+    "10:0.478,11:0.478,22:0.096,50:0.080,51:0.080,44:0.079,45:0.079,46:0.079",
+    "8:0.390,9:0.390,10:0.351,11:0.351,0:0.014,1:0.014,2:0.000,3:0.000",
+    "22:0.400,50:0.332,51:0.332,44:0.328,45:0.328,46:0.328,47:0.328,8:0.059",
+    "2:0.422,3:0.422,10:0.037,11:0.037,0:0.000,1:0.000,4:0.000,5:0.000",
+    "22:0.400,50:0.332,51:0.332,44:0.328,45:0.328,46:0.328,47:0.328,8:0.055",
+    "56:0.930,57:0.930,58:0.930,59:0.930,16:0.512,17:0.512,64:0.344,65:0.344",
+    "0:0.000,1:0.000,2:0.000,3:0.000,4:0.000,5:0.000,6:0.000,7:0.000",
 ];
 
 static string[] GoldenLines(List<StepRecord> run)
@@ -1065,6 +1104,47 @@ static void SaccadesArePacedFast()
     // 60 simulated seconds; log-normal dwells (median 233 ms, long tail) put the rate near the
     // tracked 102 per minute.
     AssertTrue(saccades is > 80 and < 160);
+}
+
+// Counts blink onsets the way the replay analysis does, so test numbers and field numbers compare
+// directly. A saccade-coupled regression here reads as a rate several times the configured one.
+static int CountBlinks(ProceduralEyes eyes, float seconds, float arousal, float blinksPerMinute)
+{
+    const float dt = 1f / 120f;
+    int blinks = 0;
+    bool closed = false;
+    for (int i = 0; i < (int)(seconds / dt); i++)
+    {
+        float openness = eyes.Update(dt, arousal, blinksPerMinute).Openness;
+        if (!closed && openness < 0.25f)
+        {
+            closed = true;
+            blinks++;
+        }
+        else if (closed && openness > 0.75f)
+        {
+            closed = false;
+        }
+    }
+
+    return blinks;
+}
+
+static void BlinkRateIsNatural()
+{
+    int blinks = CountBlinks(new ProceduralEyes(new Random(17)), 600f, arousal: 0f, blinksPerMinute: 15.9f);
+    float perMinute = blinks / 10f;
+    Console.WriteLine($"  blink rate: {perMinute:F1}/min over 600 s");
+    AssertTrue(perMinute is >= 8f and <= 18f);
+}
+
+static void BlinkRateFollowsConfig()
+{
+    float slow = CountBlinks(new ProceduralEyes(new Random(23)), 600f, arousal: 0f, blinksPerMinute: 8f) / 10f;
+    float fast = CountBlinks(new ProceduralEyes(new Random(23)), 600f, arousal: 0f, blinksPerMinute: 30f) / 10f;
+    Console.WriteLine($"  blink rate: {slow:F1}/min at 8, {fast:F1}/min at 30");
+    AssertTrue(slow is >= 5f and <= 11f);
+    AssertTrue(fast is >= 24f and <= 36f);
 }
 
 static void ProceduralEyesBounded()

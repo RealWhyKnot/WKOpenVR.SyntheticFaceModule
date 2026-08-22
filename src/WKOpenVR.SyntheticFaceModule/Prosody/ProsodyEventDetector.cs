@@ -20,9 +20,19 @@ public sealed class ProsodyEventDetector
     private const float EmphasisSalienceMin = 2.5f;
     private const float EmphasisLoudMinZ = 1.0f;
 
-    private const float EngagementTauSeconds = 0.3f;
-    private const float EngagementThreshold = 0.75f;
-    private const float EngagementMinGapSeconds = 14f;
+    // Prosodic stress does not recur every syllable, and the loud high-pitched calls of a laugh are
+    // salience maxima too -- without these an entire laugh bout also reads as repeated emphasis.
+    private const float EmphasisMinGapSeconds = 0.8f;
+
+    // Arousal is a z-score against the speaker's own rolling 20 s baseline, so it re-centres on
+    // whatever they are currently doing and cannot report a sustained state. Over a 10 min tracked
+    // session it peaked at 0.61 and averaged 0.14, so the old 0.75 gate was unreachable. A gate low
+    // enough to be reachable needs the slower time constant to go with it, or single pitch
+    // transients trip a channel that is supposed to mean sustained animation. The min gap, not the
+    // threshold, is what bounds how often this fires.
+    private const float EngagementTauSeconds = 1.5f;
+    private const float EngagementThreshold = 0.55f;
+    private const float EngagementMinGapSeconds = 6f;
 
     private const float HesitationWindowSeconds = 0.6f;
     private const int HesitationMinSamples = 10;
@@ -30,23 +40,37 @@ public sealed class ProsodyEventDetector
     private const float HesitationPitchStdMax = 0.05f;
     private const float HesitationOnsetZMax = -0.5f;
 
-    private const float LaughOnsetRatio = 2f;
-    private const int LaughOnsets = 4;
-    private const float LaughIntervalMin = 0.125f;
-    private const float LaughIntervalMax = 0.25f;
-    private const float LaughIntervalSpreadMax = 1.4f;
+    // Laughter and ordinary speech share a 4-6 Hz syllable rate, so rhythm alone cannot separate
+    // them; the pitch and loudness lift over the speaker's own baseline is what does. Bouts are
+    // 1-3 s, well inside the 20 s baseline window, so that lift reads as a transient.
+    private const float LaughOnsetRatio = 1.5f;
+    private const int LaughOnsets = 3;
+    private const float LaughIntervalMin = 0.09f;
+    private const float LaughIntervalMax = 0.4f;
+    private const float LaughIntervalSpreadMax = 2.2f;
+    private const float LaughWindowSeconds = 1.5f;
+
+    // A bout runs about a second and should read as one laugh, not one per call. The same window
+    // suppresses emphasis, whose salience test the loud high-pitched calls would otherwise pass.
+    private const float LaughRefractorySeconds = 1f;
+    private const float LaughPitchMinZ = 0.8f;
+    private const float LaughLoudMinZ = 0.5f;
 
     private readonly record struct Sample(double T, bool Voiced, float LogPitch, float OnsetZ);
+
+    private readonly record struct LaughOnset(double T, float ZPitch, float ZLoud);
 
     private readonly RunningBaseline _loudness = new(20f);
     private readonly RunningBaseline _pitch = new(20f);
     private readonly RunningBaseline _onset = new(20f);
     private readonly Queue<Sample> _samples = new();
-    private readonly Queue<double> _laughOnsets = new();
+    private readonly Queue<LaughOnset> _laughOnsets = new();
 
     private double _lastT = double.NaN;
     private double _speechStartT;
     private double _lastEngagementT = double.NegativeInfinity;
+    private double _lastEmphasisT = double.NegativeInfinity;
+    private double _lastLaughT = double.NegativeInfinity;
     private bool _wasSpeech;
     private bool _hesitationArmed = true;
     private float _engagement;
@@ -108,10 +132,17 @@ public sealed class ProsodyEventDetector
         // pitch-only rise (question, engagement) from reading as stress.
         float salience = zLoud + zPitch;
         bool emphasis = _salience1 > _salience2 && _salience1 >= salience
-            && _salience1 >= EmphasisSalienceMin && _loud1 >= EmphasisLoudMinZ;
+            && _salience1 >= EmphasisSalienceMin && _loud1 >= EmphasisLoudMinZ
+            && t - _lastEmphasisT >= EmphasisMinGapSeconds
+            && t - _lastLaughT >= LaughRefractorySeconds
+            && !InRhythmicBurst();
         _salience2 = _salience1;
         _salience1 = salience;
         _loud1 = zLoud;
+        if (emphasis)
+        {
+            _lastEmphasisT = t;
+        }
 
         bool engagement = false;
         if (_engagement >= EngagementThreshold && t - _lastEngagementT >= EngagementMinGapSeconds)
@@ -132,18 +163,29 @@ public sealed class ProsodyEventDetector
             _hesitationArmed = true;
         }
 
+        // Stale onsets used to sit in the queue indefinitely and force IsRhythmic() false forever.
         bool laughter = false;
-        if (f.Voiced && _prevRms > 0f && frame.Rms >= LaughOnsetRatio * _prevRms)
+        while (_laughOnsets.Count > 0 && _laughOnsets.Peek().T < t - LaughWindowSeconds)
         {
-            _laughOnsets.Enqueue(t);
+            _laughOnsets.Dequeue();
+        }
+
+        // Voicing is not required: a good share of real laughter is breathy or unvoiced.
+        if (_prevRms > 0f && frame.Rms >= LaughOnsetRatio * _prevRms)
+        {
+            _laughOnsets.Enqueue(new LaughOnset(t, zPitch, zLoud));
             while (_laughOnsets.Count > LaughOnsets)
             {
                 _laughOnsets.Dequeue();
             }
 
-            if (_laughOnsets.Count == LaughOnsets && IsRhythmic())
+            if (_laughOnsets.Count == LaughOnsets
+                && t - _lastLaughT >= LaughRefractorySeconds
+                && IsRhythmic()
+                && HasLaughLift())
             {
                 laughter = true;
+                _lastLaughT = t;
                 _laughOnsets.Clear();
             }
         }
@@ -162,6 +204,8 @@ public sealed class ProsodyEventDetector
         _lastT = double.NaN;
         _speechStartT = 0;
         _lastEngagementT = double.NegativeInfinity;
+        _lastEmphasisT = double.NegativeInfinity;
+        _lastLaughT = double.NegativeInfinity;
         _wasSpeech = false;
         _hesitationArmed = true;
         _engagement = 0f;
@@ -253,11 +297,11 @@ public sealed class ProsodyEventDetector
         double previous = double.NaN;
         double shortest = double.PositiveInfinity;
         double longest = 0;
-        foreach (double onset in _laughOnsets)
+        foreach (LaughOnset onset in _laughOnsets)
         {
             if (!double.IsNaN(previous))
             {
-                double interval = onset - previous;
+                double interval = onset.T - previous;
                 if (interval < LaughIntervalMin || interval > LaughIntervalMax)
                 {
                     return false;
@@ -267,10 +311,46 @@ public sealed class ProsodyEventDetector
                 longest = Math.Max(longest, interval);
             }
 
-            previous = onset;
+            previous = onset.T;
         }
 
         return longest <= shortest * LaughIntervalSpreadMax;
+    }
+
+    // True once a run of onsets is pacing itself like a laugh bout, before the full laughter
+    // condition has been met.
+    private bool InRhythmicBurst()
+    {
+        if (_laughOnsets.Count < 2)
+        {
+            return false;
+        }
+
+        double previous = double.NaN;
+        double last = 0;
+        foreach (LaughOnset onset in _laughOnsets)
+        {
+            last = previous;
+            previous = onset.T;
+        }
+
+        double interval = previous - last;
+        return interval >= LaughIntervalMin && interval <= LaughIntervalMax;
+    }
+
+    // Peak pitch rather than mean: a bout mixes voiced calls (which carry the lift) with unvoiced
+    // ones, and zPitch is reported as 0 for the unvoiced frames.
+    private bool HasLaughLift()
+    {
+        float peakPitch = float.NegativeInfinity;
+        float sumLoud = 0f;
+        foreach (LaughOnset onset in _laughOnsets)
+        {
+            peakPitch = Math.Max(peakPitch, onset.ZPitch);
+            sumLoud += onset.ZLoud;
+        }
+
+        return peakPitch >= LaughPitchMinZ && sumLoud / _laughOnsets.Count >= LaughLoudMinZ;
     }
 
     private static float Clamp(float z) => Math.Clamp(z, -ZClamp, ZClamp);

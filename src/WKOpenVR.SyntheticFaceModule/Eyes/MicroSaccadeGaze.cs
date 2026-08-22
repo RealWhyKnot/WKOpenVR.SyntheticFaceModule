@@ -77,6 +77,8 @@ public sealed class MicroSaccadeGaze
     /// <summary>True at the instant a new saccade begins (useful to nudge a blink).</summary>
     public bool SaccadeStarted { get; private set; }
 
+    public float SaccadeAmplitude { get; private set; }
+
     /// <summary>Advances gaze. <paramref name="arousal"/> (0..1) shortens dwell times.</summary>
     public void Update(float dtSeconds, float arousal = 0f)
     {
@@ -141,6 +143,7 @@ public sealed class MicroSaccadeGaze
         _saccadeTime = 0f;
         _phase = Phase.Saccading;
         SaccadeStarted = true;
+        SaccadeAmplitude = distance;
     }
 
     private float SampleDwell(float arousal)

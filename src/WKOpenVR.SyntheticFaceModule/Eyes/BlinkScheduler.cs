@@ -1,11 +1,11 @@
 namespace WKOpenVR.SyntheticFaceModule.Eyes;
 
 /// <summary>
-/// Generates natural-looking blinks. Inter-blink intervals are drawn from an exponential (hazard)
-/// distribution around a target rate rather than a fixed period; each blink closes fast and opens
-/// slower (matching measured human blink curves), with an occasional double-blink and a refractory
-/// floor. Output is a single symmetric openness value (1 = open, 0 = closed) so the driver's
-/// eyelid-sync passes it through unchanged. Deterministic given a seeded <see cref="Random"/>.
+/// Generates natural-looking blinks. Inter-blink intervals are drawn from a log-normal distribution
+/// around a target rate rather than a fixed period; each blink closes fast and opens slower
+/// (matching measured human blink curves), with an occasional double-blink and a refractory floor.
+/// Output is a single symmetric openness value (1 = open, 0 = closed) so the driver's eyelid-sync
+/// passes it through unchanged. Deterministic given a seeded <see cref="Random"/>.
 /// </summary>
 public sealed class BlinkScheduler
 {
@@ -17,8 +17,10 @@ public sealed class BlinkScheduler
         Opening,
     }
 
+    private const float IntervalSigma = 0.8f;
+
     private readonly Random _rng;
-    private readonly float _meanIntervalSeconds;
+    private float _meanIntervalSeconds;
     private readonly float _closeSeconds;
     private readonly float _holdSeconds;
     private readonly float _openSeconds;
@@ -30,18 +32,19 @@ public sealed class BlinkScheduler
     private float _phaseTime;
     private float _openness = 1f;
     private bool _pendingDouble;
+    private float _sinceBlinkSeconds = float.MaxValue;
 
     public BlinkScheduler(
         Random rng,
         float blinksPerMinute = 15.9f,
-        float closeSeconds = 0.06f,
-        float holdSeconds = 0.02f,
-        float openSeconds = 0.14f,
-        float refractorySeconds = 1.5f,
+        float closeSeconds = 0.07f,
+        float holdSeconds = 0.10f,
+        float openSeconds = 0.20f,
+        float refractorySeconds = 0.3f,
         float doubleBlinkProbability = 0.16f)
     {
         _rng = rng;
-        _meanIntervalSeconds = 60f / MathF.Max(1f, blinksPerMinute);
+        BlinksPerMinute = blinksPerMinute;
         _closeSeconds = MathF.Max(0.01f, closeSeconds);
         _holdSeconds = MathF.Max(0f, holdSeconds);
         _openSeconds = MathF.Max(0.01f, openSeconds);
@@ -55,6 +58,12 @@ public sealed class BlinkScheduler
 
     public bool IsBlinking => _phase != Phase.Waiting;
 
+    public float BlinksPerMinute
+    {
+        get => 60f / _meanIntervalSeconds;
+        set => _meanIntervalSeconds = 60f / Math.Clamp(value, 1f, 120f);
+    }
+
     /// <summary>
     /// Advances the scheduler. <paramref name="arousal"/> (0..1) modestly raises blink frequency.
     /// Returns the current openness.
@@ -65,6 +74,7 @@ public sealed class BlinkScheduler
         {
             case Phase.Waiting:
                 _openness = 1f;
+                _sinceBlinkSeconds += dtSeconds;
                 _timeToNext -= dtSeconds * (1f + (0.5f * Math.Clamp(arousal, 0f, 1f)));
                 if (_timeToNext <= 0f)
                 {
@@ -115,7 +125,9 @@ public sealed class BlinkScheduler
     /// <summary>Nudge a blink to happen soon (e.g. on a gaze shift or speech pause).</summary>
     public void RequestBlinkSoon()
     {
-        if (_phase == Phase.Waiting && _timeToNext > 0.12f)
+        // The refractory floor binds here too. Without it a caller firing at gaze-shift rates
+        // becomes the blink clock and the sampled interval never runs to completion.
+        if (_phase == Phase.Waiting && _sinceBlinkSeconds >= _refractorySeconds && _timeToNext > 0.12f)
         {
             _timeToNext = 0.1f;
         }
@@ -125,6 +137,7 @@ public sealed class BlinkScheduler
     {
         _phase = Phase.Waiting;
         _phaseTime = 0f;
+        _sinceBlinkSeconds = 0f;
 
         if (_pendingDouble)
         {
@@ -141,10 +154,16 @@ public sealed class BlinkScheduler
         }
     }
 
+    // Search-coil recordings of spontaneous blinking give a log-normal inter-blink interval, not an
+    // exponential one; the shape holds even when the rate itself is shifted pharmacologically. The
+    // median is derived from the requested rate so BlinksPerMinute means the rate actually produced.
     private float SampleInterval()
     {
-        double u = 1.0 - _rng.NextDouble();
-        float t = (float)(-_meanIntervalSeconds * Math.Log(u));
-        return Math.Clamp(t, 0.8f, 3f * _meanIntervalSeconds);
+        float median = _meanIntervalSeconds / MathF.Exp(IntervalSigma * IntervalSigma * 0.5f);
+        double u1 = Math.Max(1e-9, _rng.NextDouble());
+        double u2 = _rng.NextDouble();
+        double gaussian = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2);
+        float t = median * MathF.Exp(IntervalSigma * (float)gaussian);
+        return Math.Clamp(t, _refractorySeconds, 4f * _meanIntervalSeconds);
     }
 }

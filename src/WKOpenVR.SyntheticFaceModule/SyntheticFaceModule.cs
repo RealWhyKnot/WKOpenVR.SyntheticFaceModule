@@ -241,7 +241,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
         if (driveEyes && _eyes is not null)
         {
             float arousal = prosody.SpeechActive ? prosody.Arousal : 0f;
-            eyes = _eyes.Update(dt, arousal);
+            eyes = _eyes.Update(dt, arousal, _config.BlinkRatePerMinute);
         }
 
         _mixer.Compose(
