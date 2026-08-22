@@ -6,6 +6,14 @@ The `release.yml` body for each tag is composed mechanically from the commit sli
 
 ## Unreleased
 
+### Added
+- **module:** Fire brow, eye and smile episodes from vocal tone (d273ce0)
+- **module:** Expose every expression channel in the settings descriptor (fb3156d)
+- **module:** Share one episode envelope across expression channels (4b7cd59)
+
+### Changed
+- **module:** Drive the per-frame pipeline through a testable step (85e93b5)
+
 ### Fixed
 - **module:** Drive only shape combinations a real face can hold (0a7f9e1)
 - **module:** Correct the smile default in the settings descriptor (f84dff3)
