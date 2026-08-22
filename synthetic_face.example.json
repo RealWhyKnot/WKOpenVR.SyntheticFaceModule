@@ -2,21 +2,33 @@
   // Microphone-driven mouth shapes (lip-sync). Turn off to stop driving the mouth.
   "DriveMouth": true,
 
-  // Subtle arousal-driven expression coloring on brows and eyes, plus the episodic smile. Low
-  // intensity by design; it never overrides the lip-sync mouth shapes.
+  // Expression from vocal tone: question, emphasis, engagement, hesitation and laughter episodes on
+  // brows, eyes and mouth corners. Never overrides the lip-sync mouth shapes.
   "DriveEmotion": true,
 
-  // Procedural blink + gaze. OFF by default so VRChat's own idle blink/auto-gaze runs. Turn on to
-  // drive the avatar's eye parameters from this module instead.
-  "DriveEyes": false,
+  // Procedural blink + gaze, timed to tracked-eye recordings. Turn off to keep VRChat's own idle
+  // blink/auto-gaze instead.
+  "DriveEyes": true,
 
   // Quality tier: run a local ONNX speech-emotion model for a better arousal estimate (requires
   // EmotionModelPath). Heavier (CPU only); off by default. With no model present it transparently
   // falls back to the always-on heuristic.
   "QualityMode": false,
 
-  // Scales the emotion coloring amount: 0 disables it, 1 uses the full (already conservative) caps.
+  // Master gain over every tone-driven episode: 0 disables them, 1 matches tracked amplitudes.
   "EmotionIntensity": 1.0,
+
+  // Per-channel switch and gain. Gains multiply EmotionIntensity; 1 matches tracked amplitudes.
+  "QuestionEnabled": true,
+  "QuestionGain": 1.0,
+  "EmphasisEnabled": true,
+  "EmphasisGain": 1.0,
+  "EngagementEnabled": true,
+  "EngagementGain": 1.0,
+  "HesitationEnabled": true,
+  "HesitationGain": 1.0,
+  "LaughterEnabled": true,
+  "LaughterGain": 1.0,
 
   // Scales the episodic smile on the mouth corners (timings from real tracker recordings).
   // Audio cannot tell when you are smiling, so this defaults to 0 and the corners stay still.

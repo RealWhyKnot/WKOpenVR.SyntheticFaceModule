@@ -56,7 +56,7 @@ var tests = new (string Name, Action Body)[]
     ("Step is deterministic for seed", StepIsDeterministicForSeed),
     ("Module writes mouth frame", ModuleWritesMouthFrame),
     ("Module sets eye flag when eyes enabled", ModuleSetsEyeFlagWhenEnabled),
-    ("Module leaves eyes to VRChat by default", ModuleLeavesEyesByDefault),
+    ("Module drives eyes by default", ModuleDrivesEyesByDefault),
     ("Module reports healthy status when active", ModuleReportsHealthyStatus),
     ("Module reports no-channels status when idle", ModuleReportsNoChannelsStatus),
     ("Package dependencies are allowed", PackageDependenciesAreAllowed),
@@ -903,7 +903,7 @@ static void ModuleSetsEyeFlagWhenEnabled()
     AssertTrue((frame.Flags & FaceFrameFlags.EyeValid) != 0);
 }
 
-static void ModuleLeavesEyesByDefault()
+static void ModuleDrivesEyesByDefault()
 {
     var source = new FixedAudioAnalysisSource(MakeVoiceFrame(rms: 0.3f));
     using var module = new SyntheticFaceModule(source, new SyntheticConfig());
@@ -917,7 +917,7 @@ static void ModuleLeavesEyesByDefault()
     module.UpdateAsync(frame, CancellationToken.None).AsTask().GetAwaiter().GetResult();
     module.TeardownAsync(CancellationToken.None).AsTask().GetAwaiter().GetResult();
 
-    AssertTrue((frame.Flags & FaceFrameFlags.EyeValid) == 0);
+    AssertTrue((frame.Flags & FaceFrameFlags.EyeValid) != 0);
 }
 
 // The descriptor is what a host UI renders, so a default that drifts from SyntheticConfig shows the

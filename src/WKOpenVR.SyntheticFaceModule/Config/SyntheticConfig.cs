@@ -3,21 +3,21 @@ namespace WKOpenVR.SyntheticFaceModule.Config;
 /// <summary>
 /// User-tunable settings for the synthetic face source. Plain data; serialized to/from
 /// <c>synthetic_face.json</c>. All fields have safe defaults so the module behaves well with
-/// no config file present (mouth on, emotion subtle, eyes off, lite tier).
+/// no config file present (mouth on, tone-driven expression on, eyes on, lite tier).
 /// </summary>
 public sealed class SyntheticConfig
 {
     /// <summary>Drive mouth shapes from the microphone. Default on.</summary>
     public bool DriveMouth { get; set; } = true;
 
-    /// <summary>Apply subtle prosody-driven expression coloring. Default on but low intensity.</summary>
+    /// <summary>Fire expression episodes from vocal tone. Default on.</summary>
     public bool DriveEmotion { get; set; } = true;
 
     /// <summary>
-    /// Write procedural eye data (blink + gaze). Default OFF so VRChat's free idle blink/auto-gaze
-    /// runs; turning this on overrides VRChat's native eyes with our procedural ones.
+    /// Write procedural eye data (blink + gaze) timed to tracked-eye recordings. Default on; off
+    /// leaves VRChat's own idle blink/auto-gaze running.
     /// </summary>
-    public bool DriveEyes { get; set; }
+    public bool DriveEyes { get; set; } = true;
 
     /// <summary>
     /// Enable the intensive quality tier (ONNX speech-emotion model). Default off; the heuristic
@@ -25,8 +25,29 @@ public sealed class SyntheticConfig
     /// </summary>
     public bool QualityMode { get; set; }
 
-    /// <summary>Scales the emotion coloring caps. 0 disables, 1 = full design caps.</summary>
+    /// <summary>Master gain over every tone-driven episode. 0 disables, 1 = tracked amplitudes.</summary>
     public float EmotionIntensity { get; set; } = 1.0f;
+
+    // Per-channel switch and gain; gains multiply EmotionIntensity.
+    public bool QuestionEnabled { get; set; } = true;
+
+    public float QuestionGain { get; set; } = 1.0f;
+
+    public bool EmphasisEnabled { get; set; } = true;
+
+    public float EmphasisGain { get; set; } = 1.0f;
+
+    public bool EngagementEnabled { get; set; } = true;
+
+    public float EngagementGain { get; set; } = 1.0f;
+
+    public bool HesitationEnabled { get; set; } = true;
+
+    public float HesitationGain { get; set; } = 1.0f;
+
+    public bool LaughterEnabled { get; set; } = true;
+
+    public float LaughterGain { get; set; } = 1.0f;
 
     // Scales the episodic smile on the mouth corners. Defaults to 0: audio cannot tell when someone
     // is smiling, so the corners stay still unless the user opts in. 1 = calibrated amplitudes.

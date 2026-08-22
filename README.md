@@ -29,10 +29,15 @@ missing fields fall back to the defaults below.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `DriveMouth` | `true` | Microphone-driven mouth shapes (lip-sync). |
-| `DriveEmotion` | `true` | Prosody-driven expression: subtle arousal-driven brow/eye coloring plus the episodic smile; never overrides the lip-sync mouth. |
-| `DriveEyes` | `false` | Procedural blink + gaze. Off keeps VRChat's own idle eyes; on drives the avatar's eyes from this module. |
+| `DriveEmotion` | `true` | Expression from vocal tone: question, emphasis, engagement, hesitation and laughter episodes on brows, eyes and mouth corners; never overrides the lip-sync mouth. |
+| `DriveEyes` | `true` | Procedural blink + gaze timed to tracked-eye recordings. Off keeps VRChat's own idle eyes. |
 | `QualityMode` | `false` | Use a local ONNX speech-emotion model for a better arousal estimate (needs `EmotionModelPath`); CPU-only, opt-in. Falls back to the heuristic when no model is present. |
-| `EmotionIntensity` | `1.0` | Scales the emotion coloring (0 disables, 1 = full conservative caps). |
+| `EmotionIntensity` | `1.0` | Master gain over every tone-driven episode (0 disables, 1 = tracked amplitudes). |
+| `QuestionEnabled` / `QuestionGain` | `true` / `1.0` | Brow raise on a rising pitch at the end of an utterance. |
+| `EmphasisEnabled` / `EmphasisGain` | `true` / `1.0` | Outer-brow flash on a loud, high-pitched stress. |
+| `EngagementEnabled` / `EngagementGain` | `true` / `1.0` | Eye widen while speech stays animated. |
+| `HesitationEnabled` / `HesitationGain` | `true` / `1.0` | Brow furrow on a flat, sustained monotone. |
+| `LaughterEnabled` / `LaughterGain` | `true` / `1.0` | Smile with cheek and eye squint on rhythmic laughter bursts. |
 | `SmileIntensity` | `0.0` | Scales the episodic smile on the mouth corners. Audio cannot detect smiling, so this is opt-in: 0 keeps the corners still, 1 = calibrated episode amplitudes. |
 | `MouthIntensity` | `0.6` | Scales the mouth output. 0.6 matches tracked jaw travel; 1.0 is the raw solver level. |
 | `IdleIntensity` | `1.0` | Scales the always-on idle micro-motion (small brow/squint events while quiet; 0 disables). |
