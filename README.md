@@ -8,12 +8,12 @@ hardware:
 - **Mouth** - two-stage lip-sync: an RMS/voice-activity jaw envelope plus an MFCC/spectral
   broad-viseme classifier (open / front / rounded vowels and fricatives) for nuanced lip shapes,
   with fast-attack/slow-release smoothing and coarticulation.
-- **Emotion** - confidence-gated expression from prosody relative to a per-speaker baseline:
-  subtle coloring on brows and eye squint/wide, plus a full-range smile/frown channel on the
-  mouth corners with cheek raise, tuned to real face-tracking recordings. It never overrides
-  the viseme-critical mouth shapes (jaw, lips, stretch, tightener).
-- **Eyes** - optional procedural blinks (hazard-scheduled, fast-close/slow-open) and micro-saccade
-  gaze. Off by default so VRChat's own idle eyes run; enable to drive the avatar's eye parameters.
+- **Expression** - vocal-tone events judged against a per-speaker baseline (rising terminal,
+  stress, sustained animation, monotone, rhythmic laughter) fire timed brow, eye and smile
+  episodes whose onset, duration and peak come from real face-tracking recordings. It never
+  overrides the viseme-critical mouth shapes (jaw, lips, stretch).
+- **Eyes** - procedural blinks (hazard-scheduled, fast-close/slow-open) and micro-saccade gaze
+  timed to tracked-eye recordings. On by default; turn off to keep VRChat's own idle eyes.
 - **Quality tier** (opt-in) - a tiny ONNX speech-emotion model can replace the heuristic estimator
   for better valence, with a smooth crossfade and heuristic fallback. No model weights are bundled;
   supply a license-clean model to enable it.
@@ -38,7 +38,6 @@ missing fields fall back to the defaults below.
 | `EngagementEnabled` / `EngagementGain` | `true` / `1.0` | Eye widen while speech stays animated. |
 | `HesitationEnabled` / `HesitationGain` | `true` / `1.0` | Brow furrow on a flat, sustained monotone. |
 | `LaughterEnabled` / `LaughterGain` | `true` / `1.0` | Smile with cheek and eye squint on rhythmic laughter bursts. |
-| `SmileIntensity` | `0.0` | Scales the episodic smile on the mouth corners. Audio cannot detect smiling, so this is opt-in: 0 keeps the corners still, 1 = calibrated episode amplitudes. |
 | `MouthIntensity` | `0.6` | Scales the mouth output. 0.6 matches tracked jaw travel; 1.0 is the raw solver level. |
 | `IdleIntensity` | `1.0` | Scales the always-on idle micro-motion (small brow/squint events while quiet; 0 disables). |
 | `MicDeviceNumber` | `-1` | Capture device index; `-1` = system default. |

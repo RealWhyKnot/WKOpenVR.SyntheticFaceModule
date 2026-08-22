@@ -32,12 +32,19 @@ var tests = new (string Name, Action Body)[]
     ("Mouth close does not fight open speech", MouthCloseDoesNotFightOpenSpeech),
     ("Mouth rounded vs front mapping", MouthRoundedVsFrontMapping),
     ("Lip posture duty cycles match tracked speech", LipPostureDutyCyclesMatchTrackedSpeech),
-    ("Emotion coloring respects caps and avoids mouth shapes", EmotionColoringCapsAndMouth),
-    ("Emotion coloring suppressed at low confidence", EmotionColoringSuppressedLowConfidence),
-    ("Valence never moves the mouth corners", ValenceNeverMovesCorners),
-    ("Smile episode mirrors tracker pairings", SmileMirrorsTrackerPairings),
-    ("Smile episode rises fast and falls slow", SmileEpisodeRisesFastFallsSlow),
-    ("Smile intensity zero keeps corners still", SmileIntensityZeroKeepsCornersStill),
+    ("Episodes respect tracked peaks and avoid mouth shapes", EpisodesRespectPeaksAndAvoidMouth),
+    ("Only laughter moves the mouth corners", OnlyLaughterMovesCorners),
+    ("Laughter mirrors tracker pairings", LaughterMirrorsTrackerPairings),
+    ("Laughter rises fast and falls slow", LaughterRisesFastFallsSlow),
+    ("Disabled laughter keeps corners still", DisabledLaughterKeepsCornersStill),
+    ("Detector flags only the scripted event", DetectorFlagsOnlyTheScriptedEvent),
+    ("Question raises inner brow", QuestionRaisesInnerBrow),
+    ("Statement fires nothing", StatementFiresNothing),
+    ("Emphasis flashes outer brow", EmphasisFlashesOuterBrow),
+    ("Engagement widens eyes once", EngagementWidensEyesOnce),
+    ("Hesitation furrows brow", HesitationFurrowsBrow),
+    ("Laughter smiles with Duchenne ratios", LaughterSmilesWithDuchenneRatios),
+    ("Disabled channel stays still", DisabledChannelStaysStill),
     ("Mixer composes mouth and emotion", MixerComposesMouthAndEmotion),
     ("Mixer coloring does not saturate", MixerColoringDoesNotSaturate),
     ("Mixer idle alone sets expressions", MixerIdleAloneSetsExpressions),
@@ -68,6 +75,9 @@ foreach (var test in tests)
     test.Body();
     Console.WriteLine("PASS " + test.Name);
 }
+
+// Idle micro-motion peaks at ~0.1; anything above it during a scripted run is an episode.
+const float IdleCeiling = 0.11f;
 
 // ---- DSP ----
 
@@ -370,57 +380,55 @@ static void LipPostureDutyCyclesMatchTrackedSpeech()
     AssertTrue(spreadingFraction > 0.05f && spreadingFraction < 0.25f);
 }
 
-// ---- Emotion coloring ----
+// ---- Expression episodes ----
 
-static void EmotionColoringCapsAndMouth()
+static void EpisodesRespectPeaksAndAvoidMouth()
 {
-    var layer = new EmotionColoringLayer(new Random(7));
+    var layer = new EmotionColoringLayer();
     var offsets = new float[FaceExpressionCount.Value];
-    var prosody = new ProsodyState(Arousal: 1.0f, Valence: 0.9f, Confidence: 0.9f, SpeechActive: true);
-    for (int i = 0; i < 60; i++)
+    var all = new ProsodyEvents(true, true, true, true, true);
+    float browInner = 0f;
+    float eyeWide = 0f;
+    float corner = 0f;
+    for (int i = 0; i < 300; i++)
     {
-        layer.Apply(prosody, intensity: 1f, smileIntensity: 1f, dtSeconds: 0.02f, offsets);
+        layer.Apply(i == 0 ? all : default, new SyntheticConfig(), dtSeconds: 0.02f, offsets);
+        browInner = Math.Max(browInner, offsets[(int)FaceExpression.BrowInnerUpRight]);
+        eyeWide = Math.Max(eyeWide, offsets[(int)FaceExpression.EyeWideRight]);
+        corner = Math.Max(corner, offsets[(int)FaceExpression.MouthCornerPullRight]);
+        // Viseme-critical shapes stay owned by the audio mouth solver.
+        AssertEqual(0f, offsets[(int)FaceExpression.JawOpen]);
+        AssertEqual(0f, offsets[(int)FaceExpression.MouthClosed]);
+        AssertEqual(0f, offsets[(int)FaceExpression.LipFunnelUpperRight]);
+        AssertEqual(0f, offsets[(int)FaceExpression.MouthStretchRight]);
+        AssertEqual(0f, offsets[(int)FaceExpression.MouthTightenerRight]);
+        AssertEqual(0f, offsets[(int)FaceExpression.MouthUpperUpRight]);
+        AssertEqual(0f, offsets[(int)FaceExpression.MouthPressRight]);
     }
 
-    AssertTrue(offsets[(int)FaceExpression.BrowOuterUpRight] > 0f);
-    AssertTrue(offsets[(int)FaceExpression.BrowOuterUpRight] <= 0.18f);
-    AssertTrue(offsets[(int)FaceExpression.EyeWideRight] <= 0.14f);
-    // Viseme-critical shapes stay owned by the audio mouth solver.
-    AssertEqual(0f, offsets[(int)FaceExpression.JawOpen]);
-    AssertEqual(0f, offsets[(int)FaceExpression.MouthClosed]);
-    AssertEqual(0f, offsets[(int)FaceExpression.LipFunnelUpperRight]);
-    AssertEqual(0f, offsets[(int)FaceExpression.MouthStretchRight]);
-    AssertEqual(0f, offsets[(int)FaceExpression.MouthTightenerRight]);
-    AssertEqual(0f, offsets[(int)FaceExpression.MouthUpperUpRight]);
-    AssertEqual(0f, offsets[(int)FaceExpression.MouthPressRight]);
+    AssertTrue(browInner > 0.5f && browInner <= 0.54f);
+    AssertTrue(eyeWide > 0.9f && eyeWide <= 0.93f);
+    AssertTrue(corner > 0.99f && corner <= 1f);
 }
 
-// Regression guard for the defect this layer was rebuilt around: audio valence is near chance, so
-// it must not reach the corners no matter how positive it reads.
-static void ValenceNeverMovesCorners()
+// Audio valence is near chance, so nothing but laughter reaches the corners.
+static void OnlyLaughterMovesCorners()
 {
-    var layer = new EmotionColoringLayer(new Random(3));
+    var layer = new EmotionColoringLayer();
     var offsets = new float[FaceExpressionCount.Value];
-    var swings = new[] { 1.0f, -1.0f, 0.6f, -0.6f };
-
+    var everythingElse = new ProsodyEvents(Question: true, Emphasis: true, Engagement: true, Hesitation: true, Laughter: false);
     for (int i = 0; i < 600; i++)
     {
-        var prosody = new ProsodyState(
-            Arousal: 0.5f,
-            Valence: swings[(i / 50) % swings.Length],
-            Confidence: 1.0f,
-            SpeechActive: true);
-        layer.Apply(prosody, intensity: 1f, smileIntensity: 0f, dtSeconds: 0.02f, offsets);
-
+        layer.Apply(i % 100 == 0 ? everythingElse : default, new SyntheticConfig(), dtSeconds: 0.02f, offsets);
         AssertEqual(0f, offsets[(int)FaceExpression.MouthCornerPullRight]);
         AssertEqual(0f, offsets[(int)FaceExpression.MouthFrownRight]);
         AssertEqual(0f, offsets[(int)FaceExpression.MouthDimpleRight]);
     }
 }
 
-static void SmileMirrorsTrackerPairings()
+static void LaughterMirrorsTrackerPairings()
 {
-    var layer = new EmotionColoringLayer(new Random(11));
+    var layer = new EmotionColoringLayer();
     var offsets = new float[FaceExpressionCount.Value];
     float pull = RunToSmileAbove(layer, offsets, 0.4f);
 
@@ -428,28 +436,22 @@ static void SmileMirrorsTrackerPairings()
     AssertEqual(pull, offsets[(int)FaceExpression.MouthCornerSlantRight]);
     AssertEqual(pull * 0.37f, offsets[(int)FaceExpression.MouthDimpleRight]);
     AssertEqual(pull * 0.55f, offsets[(int)FaceExpression.CheekSquintRight]);
+    AssertEqual(pull * 0.35f, offsets[(int)FaceExpression.EyeSquintRight]);
     AssertEqual(0f, offsets[(int)FaceExpression.MouthFrownRight]);
 }
 
-static void SmileEpisodeRisesFastFallsSlow()
+static void LaughterRisesFastFallsSlow()
 {
-    var layer = new EmotionColoringLayer(new Random(11));
+    var layer = new EmotionColoringLayer();
     var offsets = new float[FaceExpressionCount.Value];
-    var prosody = new ProsodyState(Arousal: 1.0f, Valence: 0f, Confidence: 1.0f, SpeechActive: true);
+    var config = new SyntheticConfig();
+    layer.Apply(new ProsodyEvents(false, false, false, false, Laughter: true), config, 0.02f, offsets);
 
-    int riseFrames = 0;
-    while (offsets[(int)FaceExpression.MouthCornerPullRight] <= 0f && riseFrames < 200000)
-    {
-        layer.Apply(prosody, intensity: 1f, smileIntensity: 1f, dtSeconds: 0.02f, offsets);
-        riseFrames++;
-    }
-
-    // Time from first movement to peak, then from peak back to rest.
-    float peak = 0f;
+    float peak = offsets[(int)FaceExpression.MouthCornerPullRight];
     int toPeak = 0;
     while (true)
     {
-        layer.Apply(prosody, intensity: 1f, smileIntensity: 1f, dtSeconds: 0.02f, offsets);
+        layer.Apply(default, config, 0.02f, offsets);
         float v = offsets[(int)FaceExpression.MouthCornerPullRight];
         if (v <= peak)
         {
@@ -463,53 +465,36 @@ static void SmileEpisodeRisesFastFallsSlow()
     int toRest = 0;
     while (offsets[(int)FaceExpression.MouthCornerPullRight] > 0f && toRest < 100000)
     {
-        layer.Apply(prosody, intensity: 1f, smileIntensity: 1f, dtSeconds: 0.02f, offsets);
+        layer.Apply(default, config, 0.02f, offsets);
         toRest++;
     }
 
-    AssertTrue(peak >= 0.5f);
-    AssertTrue(peak <= 1.0f);
-    // Onset ~0.55 s against a ~2.3 s offset, matching the measured episode shape.
+    AssertTrue(peak >= 0.99f && peak <= 1.0f);
+    // Onset 0.65 s against a 1.7 s offset after a ~4.3 s episode, the tracked smile shape.
     AssertTrue(toPeak * 0.02f < 0.8f);
     AssertTrue(toRest * 0.02f > 1.5f);
 }
 
-static void SmileIntensityZeroKeepsCornersStill()
+static void DisabledLaughterKeepsCornersStill()
 {
-    var layer = new EmotionColoringLayer(new Random(5));
+    var layer = new EmotionColoringLayer();
     var offsets = new float[FaceExpressionCount.Value];
-    var prosody = new ProsodyState(Arousal: 1.0f, Valence: 0.9f, Confidence: 1.0f, SpeechActive: true);
-    for (int i = 0; i < 20000; i++)
+    var config = new SyntheticConfig { LaughterEnabled = false };
+    for (int i = 0; i < 2000; i++)
     {
-        layer.Apply(prosody, intensity: 1f, smileIntensity: 0f, dtSeconds: 0.02f, offsets);
+        layer.Apply(new ProsodyEvents(false, false, false, false, Laughter: true), config, 0.02f, offsets);
         AssertEqual(0f, offsets[(int)FaceExpression.MouthCornerPullRight]);
         AssertEqual(0f, offsets[(int)FaceExpression.MouthDimpleRight]);
     }
-
-    AssertTrue(offsets[(int)FaceExpression.BrowOuterUpRight] > 0f);
 }
 
-static void EmotionColoringSuppressedLowConfidence()
-{
-    var layer = new EmotionColoringLayer(new Random(2));
-    var offsets = new float[FaceExpressionCount.Value];
-    var prosody = new ProsodyState(Arousal: 0.9f, Valence: 0.9f, Confidence: 0.1f, SpeechActive: true);
-    for (int i = 0; i < 60; i++)
-    {
-        layer.Apply(prosody, intensity: 1f, smileIntensity: 1f, dtSeconds: 0.02f, offsets);
-    }
-
-    AssertTrue(offsets[(int)FaceExpression.BrowOuterUpRight] < 0.01f);
-}
-
-// Runs until an episode carries the corners past `threshold`, leaving `offsets` holding that same
-// frame so companion ratios can be checked against it.
 static float RunToSmileAbove(EmotionColoringLayer layer, float[] offsets, float threshold)
 {
-    var prosody = new ProsodyState(Arousal: 1.0f, Valence: 0f, Confidence: 1.0f, SpeechActive: true);
-    for (int i = 0; i < 200000; i++)
+    var config = new SyntheticConfig();
+    layer.Apply(new ProsodyEvents(false, false, false, false, Laughter: true), config, 0.02f, offsets);
+    for (int i = 0; i < 1000; i++)
     {
-        layer.Apply(prosody, intensity: 1f, smileIntensity: 1f, dtSeconds: 0.02f, offsets);
+        layer.Apply(default, config, 0.02f, offsets);
         float v = offsets[(int)FaceExpression.MouthCornerPullRight];
         if (v > threshold)
         {
@@ -517,7 +502,188 @@ static float RunToSmileAbove(EmotionColoringLayer layer, float[] offsets, float 
         }
     }
 
-    throw new InvalidOperationException("No smile episode fired");
+    throw new InvalidOperationException("No laughter episode fired");
+}
+
+// ---- Vocal-tone events ----
+
+static ScriptedAudio QuestionScript() => new ScriptedAudio().Speech(2f).Rise(0.3f, 150f, 220f).Silence(1.5f);
+
+static ScriptedAudio StatementScript() => new ScriptedAudio().Speech(2f).Silence(1.5f);
+
+static ScriptedAudio EmphasisScript() => new ScriptedAudio().Speech(1f).Speech(0.1f, rms: 0.3f).Speech(0.9f).Silence(0.5f);
+
+static ScriptedAudio EngagementScript() => new ScriptedAudio().Speech(1.5f).Speech(1.5f, pitch: 220f).Silence(0.5f);
+
+static ScriptedAudio HesitationScript() => new ScriptedAudio().Speech(2f).Monotone(1.2f).Silence(1f);
+
+static ScriptedAudio LaughterScript() => new ScriptedAudio().Speech(2f).Pulses(1.2f, 5f).Silence(1.5f);
+
+static void DetectorFlagsOnlyTheScriptedEvent()
+{
+    AssertEvents("question", RunDetector(QuestionScript(), 0f), question: 1);
+    AssertEvents("statement", RunDetector(StatementScript(), 0f));
+    AssertEvents("emphasis", RunDetector(EmphasisScript(), 0f), emphasis: -1);
+    AssertEvents("engagement", RunDetector(new ScriptedAudio().Speech(3f), 0.95f), engagement: 1);
+    AssertEvents("hesitation", RunDetector(HesitationScript(), 0f), hesitation: 1);
+    AssertEvents("laughter", RunDetector(LaughterScript(), 0f), laughter: 1);
+}
+
+static void QuestionRaisesInnerBrow()
+{
+    List<StepRecord> run = RunScript(NewModule(), QuestionScript());
+    AssertTrue(MaxOver(run, FaceExpression.BrowInnerUpLeft, 2.3f, 3.3f) >= 0.5f);
+    AssertTrue(MaxOver(run, FaceExpression.BrowInnerUpLeft, 0f, 2.3f) < IdleCeiling);
+    AssertQuiet(run, FaceExpression.EyeWideLeft, FaceExpression.BrowLowererLeft, FaceExpression.MouthCornerPullLeft);
+
+    StepRecord peak = run.MaxBy(r => r.Expressions[(int)FaceExpression.BrowInnerUpLeft])!;
+    AssertEqual(peak.Expressions[(int)FaceExpression.BrowInnerUpLeft], peak.Expressions[(int)FaceExpression.BrowInnerUpRight]);
+}
+
+static void StatementFiresNothing()
+{
+    List<StepRecord> run = RunScript(NewModule(), StatementScript());
+    AssertQuiet(
+        run,
+        FaceExpression.BrowInnerUpLeft,
+        FaceExpression.BrowOuterUpLeft,
+        FaceExpression.EyeWideLeft,
+        FaceExpression.BrowLowererLeft,
+        FaceExpression.MouthCornerPullLeft);
+}
+
+static void EmphasisFlashesOuterBrow()
+{
+    List<StepRecord> run = RunScript(NewModule(), EmphasisScript());
+    AssertTrue(MaxOver(run, FaceExpression.BrowOuterUpLeft, 1.0f, 1.9f) >= 0.4f);
+    AssertTrue(MaxOver(run, FaceExpression.BrowOuterUpLeft, 0f, 1.0f) < IdleCeiling);
+    AssertQuiet(run, FaceExpression.BrowInnerUpLeft, FaceExpression.EyeWideLeft, FaceExpression.BrowLowererLeft, FaceExpression.MouthCornerPullLeft);
+}
+
+static void EngagementWidensEyesOnce()
+{
+    List<StepRecord> run = RunScript(NewModule(), EngagementScript());
+    AssertTrue(MaxOver(run, FaceExpression.EyeWideLeft, 1.5f, 3.5f) >= 0.8f);
+    AssertTrue(MaxOver(run, FaceExpression.EyeWideLeft, 0f, 1.5f) < IdleCeiling);
+    AssertCount(1, RisingEdges(run, FaceExpression.EyeWideLeft), "eye-wide rising edges");
+    AssertQuiet(run, FaceExpression.BrowInnerUpLeft, FaceExpression.BrowLowererLeft, FaceExpression.MouthCornerPullLeft);
+}
+
+static void HesitationFurrowsBrow()
+{
+    List<StepRecord> run = RunScript(NewModule(), HesitationScript());
+    AssertTrue(MaxOver(run, FaceExpression.BrowLowererLeft, 2.2f, 3.4f) >= 0.25f);
+    AssertTrue(MaxOver(run, FaceExpression.BrowLowererLeft, 0f, 2.2f) < IdleCeiling);
+    AssertCount(1, RisingEdges(run, FaceExpression.BrowLowererLeft), "brow-lowerer rising edges");
+    AssertQuiet(run, FaceExpression.BrowInnerUpLeft, FaceExpression.BrowOuterUpLeft, FaceExpression.EyeWideLeft, FaceExpression.MouthCornerPullLeft);
+
+    StepRecord peak = run.MaxBy(r => r.Expressions[(int)FaceExpression.BrowLowererLeft])!;
+    AssertEqual(peak.Expressions[(int)FaceExpression.BrowLowererLeft], peak.Expressions[(int)FaceExpression.BrowPinchLeft]);
+}
+
+static void LaughterSmilesWithDuchenneRatios()
+{
+    List<StepRecord> run = RunScript(NewModule(), LaughterScript());
+    AssertTrue(MaxOver(run, FaceExpression.MouthCornerPullLeft, 2.6f, 3.8f) >= 0.9f);
+    AssertTrue(MaxOver(run, FaceExpression.MouthCornerPullLeft, 0f, 2.6f) < IdleCeiling);
+    AssertQuiet(run, FaceExpression.BrowInnerUpLeft, FaceExpression.BrowOuterUpLeft, FaceExpression.EyeWideLeft, FaceExpression.BrowLowererLeft);
+
+    StepRecord peak = run.MaxBy(r => r.Expressions[(int)FaceExpression.MouthCornerPullLeft])!;
+    float pull = peak.Expressions[(int)FaceExpression.MouthCornerPullLeft];
+    AssertEqual(pull, peak.Expressions[(int)FaceExpression.MouthCornerSlantLeft]);
+    AssertEqual(pull * 0.37f, peak.Expressions[(int)FaceExpression.MouthDimpleLeft]);
+    AssertEqual(pull * 0.55f, peak.Expressions[(int)FaceExpression.CheekSquintLeft]);
+    AssertEqual(pull * 0.35f, peak.Expressions[(int)FaceExpression.EyeSquintLeft]);
+}
+
+static void DisabledChannelStaysStill()
+{
+    List<StepRecord> muted = RunScript(NewModule(new SyntheticConfig { LaughterEnabled = false }), LaughterScript());
+    AssertQuiet(muted, FaceExpression.MouthCornerPullLeft);
+
+    List<StepRecord> half = RunScript(NewModule(new SyntheticConfig { QuestionGain = 0.5f }), QuestionScript());
+    float peak = MaxOver(half, FaceExpression.BrowInnerUpLeft, 2.3f, 3.3f);
+    AssertTrue(peak >= 0.25f && peak <= 0.30f);
+}
+
+static List<ProsodyEvents> RunDetector(ScriptedAudio script, float arousal)
+{
+    var detector = new ProsodyEventDetector();
+    var events = new List<ProsodyEvents>(script.Frames.Count);
+    foreach (AudioAnalysisFrame frame in script.Frames)
+    {
+        events.Add(detector.Update(frame, isSpeech: frame.Rms > 0.01f, arousal));
+    }
+
+    return events;
+}
+
+// Expected counts: exact when >= 0, "at least one" when -1.
+static void AssertEvents(string script, List<ProsodyEvents> events, int question = 0, int emphasis = 0, int engagement = 0, int hesitation = 0, int laughter = 0)
+{
+    var actual = new[]
+    {
+        events.Count(e => e.Question),
+        events.Count(e => e.Emphasis),
+        events.Count(e => e.Engagement),
+        events.Count(e => e.Hesitation),
+        events.Count(e => e.Laughter),
+    };
+    var expected = new[] { question, emphasis, engagement, hesitation, laughter };
+    for (int i = 0; i < 5; i++)
+    {
+        bool ok = expected[i] < 0 ? actual[i] >= 1 : actual[i] == expected[i];
+        if (!ok)
+        {
+            string where = string.Join(" ", events
+                .Select((e, k) => (e, k))
+                .Where(x => x.e != default)
+                .Select(x => $"{x.k * 0.02f:F2}s:{(x.e.Question ? "q" : "")}{(x.e.Emphasis ? "e" : "")}{(x.e.Engagement ? "g" : "")}{(x.e.Hesitation ? "h" : "")}{(x.e.Laughter ? "l" : "")}"));
+            throw new InvalidOperationException(
+                $"{script}: events q/e/g/h/l = {string.Join("/", actual)}, expected {string.Join("/", expected)}; at {where}");
+        }
+    }
+}
+
+static void AssertQuiet(List<StepRecord> run, params FaceExpression[] shapes)
+{
+    foreach (FaceExpression shape in shapes)
+    {
+        float max = MaxOver(run, shape, 0f, run.Count / 120f + 1f);
+        if (max >= IdleCeiling)
+        {
+            throw new InvalidOperationException($"{shape} reached {max:F3}, above the idle ceiling");
+        }
+    }
+}
+
+static float MaxOver(List<StepRecord> records, FaceExpression shape, float fromSeconds, float toSeconds)
+{
+    float max = 0f;
+    for (int k = (int)(fromSeconds * 120f); k < Math.Min(records.Count, (int)(toSeconds * 120f)); k++)
+    {
+        max = Math.Max(max, records[k].Expressions[(int)shape]);
+    }
+
+    return max;
+}
+
+static int RisingEdges(List<StepRecord> records, FaceExpression shape, float level = IdleCeiling)
+{
+    int edges = 0;
+    bool above = false;
+    foreach (StepRecord record in records)
+    {
+        bool now = record.Expressions[(int)shape] > level;
+        if (now && !above)
+        {
+            edges++;
+        }
+
+        above = now;
+    }
+
+    return edges;
 }
 
 // ---- Mixer ----
@@ -1073,6 +1239,14 @@ static void AssertTrue(bool value)
     if (!value)
     {
         throw new InvalidOperationException("Assertion failed");
+    }
+}
+
+static void AssertCount(int expected, int actual, string what)
+{
+    if (expected != actual)
+    {
+        throw new InvalidOperationException($"{what}: expected {expected} but got {actual}");
     }
 }
 

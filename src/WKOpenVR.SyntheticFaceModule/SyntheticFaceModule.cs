@@ -35,7 +35,8 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
     private readonly MouthSolver _mouth = new();
     private readonly NoiseFloorTracker _noiseFloor = new();
     private readonly SpeechActivityDetector _vad = new();
-    private readonly EmotionColoringLayer _coloring;
+    private readonly EmotionColoringLayer _coloring = new();
+    private readonly ProsodyEventDetector _events = new();
     private readonly SyntheticFrameMixer _mixer = new();
     private readonly float[] _mouthBuffer = new float[FaceExpressionCount.Value];
     private readonly float[] _emotionBuffer = new float[FaceExpressionCount.Value];
@@ -62,7 +63,6 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
     public SyntheticFaceModule()
     {
         _rng = new Random();
-        _coloring = new EmotionColoringLayer(new Random(_rng.Next()));
         _config = new SyntheticConfig();
         _configIsFixed = false;
     }
@@ -72,7 +72,6 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
     {
         _injectedSource = source;
         _rng = rng ?? new Random(12345);
-        _coloring = new EmotionColoringLayer(new Random(_rng.Next()));
         _config = config ?? new SyntheticConfig();
         _configIsFixed = config is not null;
     }
@@ -81,7 +80,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
         "4df7850f-1d75-4665-9eab-6f07e0f3b5dc",
         "WKOpenVR Synthetic Face Module",
         "WhyKnot",
-        new Version(0, 4, 0));
+        new Version(0, 5, 0));
 
     public FaceModuleCapabilities Capabilities =>
         FaceModuleCapabilities.Eye | FaceModuleCapabilities.Expression | FaceModuleCapabilities.AudioInput;
@@ -143,7 +142,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
             : $"{_config.MicDeviceNumber}/{_config.MicDeviceName}";
         _log.Info(
             $"[synthetic] init mouth={_config.DriveMouth} emotion={_config.DriveEmotion} eyes={_config.DriveEyes} " +
-            $"quality={_config.QualityMode} emoIntensity={_config.EmotionIntensity:F2} smileIntensity={_config.SmileIntensity:F2} " +
+            $"quality={_config.QualityMode} emoIntensity={_config.EmotionIntensity:F2} " +
             $"mouthIntensity={_config.MouthIntensity:F2} " +
             $"mic={mic} sdkAbi={FaceModuleAbi.Version} sdk={FaceModuleAbi.SdkVersion} " +
             $"config={_configLoader?.LoadedPath ?? "(programmatic)"}");
@@ -218,7 +217,15 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
         if (emotionActive)
         {
             prosody = _prosody!.Estimate(audio!, activity, isSpeech, dt);
-            _coloring.Apply(prosody, _config.EmotionIntensity, _config.SmileIntensity, dt, _emotionBuffer);
+            ProsodyEvents events = _events.Update(audio!, isSpeech, prosody.Arousal);
+            if (events != default)
+            {
+                _log.Debug(
+                    $"[synthetic] event question={events.Question} emphasis={events.Emphasis} engagement={events.Engagement} " +
+                    $"hesitation={events.Hesitation} laughter={events.Laughter} arousal={prosody.Arousal:F2}");
+            }
+
+            _coloring.Apply(events, _config, dt, _emotionBuffer);
         }
 
         // Idle micro-motion runs whenever emotion channels are allowed, with or without
@@ -418,6 +425,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
 
         _mouth.Reset();
         _coloring.Reset();
+        _events.Reset();
         _idle?.Reset();
         _vad.Reset();
         _prosody?.Reset();

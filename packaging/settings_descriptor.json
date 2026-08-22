@@ -19,7 +19,6 @@
     { "key": "HesitationGain", "type": "float", "label": "Hesitation gain", "min": 0.0, "max": 2.0, "default": 1.0 },
     { "key": "LaughterEnabled", "type": "bool", "label": "Laughter smile", "default": true },
     { "key": "LaughterGain", "type": "float", "label": "Laughter gain", "min": 0.0, "max": 2.0, "default": 1.0 },
-    { "key": "SmileIntensity", "type": "float", "label": "Smile intensity (0 = corners still)", "min": 0.0, "max": 1.0, "default": 0.0 },
     { "key": "MicDeviceNumber", "type": "int", "label": "Mic device index (-1 = default)", "min": -1, "max": 63, "default": -1 },
     { "key": "MicDeviceName", "type": "string", "label": "Mic device name match", "default": "" }
   ]

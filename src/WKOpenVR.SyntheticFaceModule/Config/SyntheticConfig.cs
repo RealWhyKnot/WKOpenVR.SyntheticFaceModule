@@ -49,10 +49,6 @@ public sealed class SyntheticConfig
 
     public float LaughterGain { get; set; } = 1.0f;
 
-    // Scales the episodic smile on the mouth corners. Defaults to 0: audio cannot tell when someone
-    // is smiling, so the corners stay still unless the user opts in. 1 = calibrated amplitudes.
-    public float SmileIntensity { get; set; }
-
     /// <summary>Scales the mouth output. 1 = nominal.</summary>
     public float MouthIntensity { get; set; } = 0.6f;
 

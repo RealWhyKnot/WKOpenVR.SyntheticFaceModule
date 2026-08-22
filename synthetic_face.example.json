@@ -30,11 +30,6 @@
   "LaughterEnabled": true,
   "LaughterGain": 1.0,
 
-  // Scales the episodic smile on the mouth corners (timings from real tracker recordings).
-  // Audio cannot tell when you are smiling, so this defaults to 0 and the corners stay still.
-  // Set to 1 to let smile episodes play while you talk.
-  "SmileIntensity": 0.0,
-
   // Scales the mouth output amount. 0.6 matches tracked jaw travel; 1 is the raw solver level.
   "MouthIntensity": 0.6,
 
