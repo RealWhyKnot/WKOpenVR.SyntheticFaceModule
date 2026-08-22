@@ -28,7 +28,7 @@
     { "key": "DozeEnabled", "type": "bool", "label": "Close eyes when head is down and quiet", "default": true },
     { "key": "DozeDwellSeconds", "type": "float", "label": "Seconds before eyes start to droop", "min": 10.0, "max": 300.0, "default": 45.0 },
     { "key": "SleepDwellSeconds", "type": "float", "label": "Further seconds before eyes shut", "min": 10.0, "max": 600.0, "default": 60.0 },
-    { "key": "DozePitchDegrees", "type": "float", "label": "Head-down angle that counts as dozing", "min": 10.0, "max": 60.0, "default": 25.0 },
+    { "key": "DozeStillnessRadPerSecond", "type": "float", "label": "Head speed that still counts as motionless (rad/s)", "min": 0.01, "max": 0.5, "default": 0.06 },
     { "key": "MicDeviceNumber", "type": "int", "label": "Mic device index (-1 = default)", "min": -1, "max": 63, "default": -1 },
     { "key": "MicDeviceName", "type": "string", "label": "Mic device name match", "default": "" }
   ]

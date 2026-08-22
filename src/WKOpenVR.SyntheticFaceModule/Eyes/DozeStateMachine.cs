@@ -9,9 +9,10 @@ public enum DozeState
     Asleep,
 }
 
-// Closing someone's eyes in the middle of a conversation is far worse than noticing they fell
-// asleep a minute late, so every gate must hold continuously for a long dwell before the lids move,
-// and any one of speech, a head lift, or a motion spike opens them again within a fifth of a second.
+// Wearing a headset makes holding the head genuinely still surprisingly hard: breathing, posture and
+// simply looking at things keep it moving. So stillness itself is the signal, with no reference to
+// where the head is pointing -- a low head is just as likely to be reading as dozing, and gating on
+// its angle only added a number nothing had measured. Any motion or speech reopens the eyes at once.
 // Without a head pose there is no state machine at all: audio alone never closes the eyes.
 public sealed class DozeStateMachine
 {
@@ -22,8 +23,9 @@ public sealed class DozeStateMachine
     private const float OpenRatePerSecond = 13.0f;
     private const float CloseRatePerSecond = 1.0f;
 
-    private const float WakeSpeedRadPerSecond = 1.0f;
-    private const float StillnessMaxMeanSquare = 0.01f;
+    // A decisive movement wakes the face immediately, before the averaged speed can catch up.
+    private const float WakeSpeedRadPerSecond = 0.5f;
+
     private const float BreathHz = 0.25f;
     private const float BreathAmplitude = 0.02f;
 
@@ -46,7 +48,7 @@ public sealed class DozeStateMachine
         bool speaking,
         float dtSeconds,
         bool enabled,
-        float dozePitchRadians,
+        float stillnessRadPerSecond,
         float dozeDwellSeconds,
         float sleepDwellSeconds)
     {
@@ -60,20 +62,15 @@ public sealed class DozeStateMachine
             return;
         }
 
-        bool headDown = head.PitchBelowNeutral > dozePitchRadians;
-        bool still = head.MeanSquareSpeed < StillnessMaxMeanSquare;
-        bool gatesHold = headDown && still && !speaking;
+        bool still = head.RmsSpeed < stillnessRadPerSecond && head.Speed <= WakeSpeedRadPerSecond;
+        bool gatesHold = still && !speaking;
 
-        bool wake = speaking
-            || head.Speed > WakeSpeedRadPerSecond
-            || head.PitchBelowNeutral < dozePitchRadians * 0.5f;
-
-        if (wake)
+        if (!gatesHold)
         {
             State = DozeState.Awake;
             _held = 0f;
         }
-        else if (gatesHold)
+        else
         {
             _held += dtSeconds;
             if (State == DozeState.Awake && _held >= dozeDwellSeconds)
@@ -86,10 +83,6 @@ public sealed class DozeStateMachine
                 State = DozeState.Asleep;
                 _held = 0f;
             }
-        }
-        else
-        {
-            _held = 0f;
         }
 
         float target = State switch

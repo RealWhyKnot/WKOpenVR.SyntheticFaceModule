@@ -225,7 +225,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
         bool driveEmotion = _expressionAllowed && _config.DriveEmotion;
         bool driveEyes = _eyeAllowed && _config.DriveEyes;
 
-        _head.Update(head, dt, _config.HeadMovingThreshold, DozePitchRadians() * 0.5f);
+        _head.Update(head, dt, _config.HeadMovingThreshold);
 
         float activity = 0f;
         bool isSpeech = false;
@@ -266,7 +266,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
             isSpeech,
             dt,
             _config.DozeEnabled && driveEyes,
-            DozePitchRadians(),
+            _config.DozeStillnessRadPerSecond,
             _config.DozeDwellSeconds,
             _config.SleepDwellSeconds);
 
@@ -320,8 +320,6 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
 
         LogDiagnostics(dt, audio, activity, isSpeech, prosody, eyes, frame);
     }
-
-    private float DozePitchRadians() => _config.DozePitchDegrees * MathF.PI / 180f;
 
     private static void AddBreath(float[] idle, float breath)
     {

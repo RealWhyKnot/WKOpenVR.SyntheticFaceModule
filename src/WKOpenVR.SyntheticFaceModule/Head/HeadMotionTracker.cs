@@ -6,16 +6,18 @@ namespace WKOpenVR.SyntheticFaceModule.Head;
 // vecAngularVelocity, so the reported value cannot be relied on.
 public sealed class HeadMotionTracker
 {
-    private const float NeutralTauSeconds = 30f;
     private const float EnergyTauSeconds = 2f;
     private const float MaxPlausibleRate = 30f;
+
+    // A pose this stale is a stalled driver, not a still head, so it counts as no pose at all.
+    private const float StalePoseSeconds = 1f;
 
     private bool _hasPrevious;
     private Quaternion _previousRotation = Quaternion.Identity;
     private float _timeSincePrevious;
     private long _previousSampleIndex;
     private bool _wasMoving;
-    private bool _hasNeutral;
+    private bool _stale;
 
     public bool Valid { get; private set; }
 
@@ -28,23 +30,16 @@ public sealed class HeadMotionTracker
     // rad/s.
     public float Speed { get; private set; }
 
-    // rad^2/s^2, averaged over a couple of seconds.
-    public float MeanSquareSpeed { get; private set; }
+    // Root mean square angular speed over a couple of seconds, rad/s.
+    public float RmsSpeed => MathF.Sqrt(MathF.Max(0f, _meanSquareSpeed));
 
     public bool Moving { get; private set; }
 
     public bool MotionOnset { get; private set; }
 
-    // radians; positive looks up.
-    public float Pitch { get; private set; }
+    private float _meanSquareSpeed;
 
-    // Slowly learned, so a habitually low head does not read as dozing.
-    public float NeutralPitch { get; private set; }
-
-    // radians below the resting posture.
-    public float PitchBelowNeutral { get; private set; }
-
-    public void Update(in HeadInput head, float dtSeconds, float movingThreshold, float neutralFreezeBelow)
+    public void Update(in HeadInput head, float dtSeconds, float movingThreshold)
     {
         MotionOnset = false;
 
@@ -54,22 +49,13 @@ public sealed class HeadMotionTracker
             return;
         }
 
-        Valid = true;
         _timeSincePrevious += MathF.Max(0f, dtSeconds);
-
-        Vector3 forward = Vector3.Transform(new Vector3(0f, 0f, -1f), head.Rotation);
-        Pitch = MathF.Asin(Math.Clamp(forward.Y, -1f, 1f));
-
-        if (!_hasNeutral)
-        {
-            NeutralPitch = Pitch;
-            _hasNeutral = true;
-        }
 
         bool newSample = !_hasPrevious || head.SampleIndex != _previousSampleIndex;
         if (newSample)
         {
-            if (_hasPrevious && _timeSincePrevious > 1e-4f)
+            // The gap either side of a stall is not a measurement, so no rate comes out of it.
+            if (_hasPrevious && !_stale && _timeSincePrevious > 1e-4f)
             {
                 Vector3 rate = LocalRate(_previousRotation, head.Rotation, _timeSincePrevious);
                 if (rate.Length() > MaxPlausibleRate)
@@ -86,28 +72,34 @@ public sealed class HeadMotionTracker
             _previousSampleIndex = head.SampleIndex;
             _timeSincePrevious = 0f;
             _hasPrevious = true;
+            _stale = false;
         }
-        else if (_timeSincePrevious > 0.25f)
+        else if (_timeSincePrevious > StalePoseSeconds)
         {
-            // The pose stopped updating: treat the head as still rather than holding a stale rate.
-            PitchRate = 0f;
-            YawRate = 0f;
-            Speed = 0f;
+            // Only a genuinely new sample index clears this, so a frozen pose never reads as still.
+            _stale = true;
         }
 
+        if (_stale)
+        {
+            Valid = false;
+            YawRate = 0f;
+            PitchRate = 0f;
+            Speed = 0f;
+            _meanSquareSpeed = 0f;
+            Moving = false;
+            _wasMoving = false;
+            return;
+        }
+
+        Valid = true;
+
         float energyAlpha = Alpha(dtSeconds, EnergyTauSeconds);
-        MeanSquareSpeed += ((Speed * Speed) - MeanSquareSpeed) * energyAlpha;
+        _meanSquareSpeed += ((Speed * Speed) - _meanSquareSpeed) * energyAlpha;
 
         Moving = Speed > movingThreshold;
         MotionOnset = Moving && !_wasMoving;
         _wasMoving = Moving;
-
-        PitchBelowNeutral = NeutralPitch - Pitch;
-        if (!Moving && PitchBelowNeutral < neutralFreezeBelow)
-        {
-            NeutralPitch += (Pitch - NeutralPitch) * Alpha(dtSeconds, NeutralTauSeconds);
-            PitchBelowNeutral = NeutralPitch - Pitch;
-        }
     }
 
     private void Reset()
@@ -116,13 +108,11 @@ public sealed class HeadMotionTracker
         YawRate = 0f;
         PitchRate = 0f;
         Speed = 0f;
-        MeanSquareSpeed = 0f;
+        _meanSquareSpeed = 0f;
         Moving = false;
-        Pitch = 0f;
-        PitchBelowNeutral = 0f;
         _hasPrevious = false;
-        _hasNeutral = false;
         _wasMoving = false;
+        _stale = false;
         _timeSincePrevious = 0f;
     }
 

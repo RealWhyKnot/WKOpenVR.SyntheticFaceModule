@@ -60,19 +60,20 @@
   // 0 restores a perfectly even face.
   "AsymmetryIntensity": 1.0,
 
-  // Let the eyes close when the head has been down, still and silent for a long time. Needs a
-  // headset: with no pose the eyes never close on their own, whatever the microphone hears.
+  // Let the eyes close after a long stretch of a motionless, silent head. Needs a headset: with no
+  // pose the eyes never close on their own, whatever the microphone hears.
   "DozeEnabled": true,
 
-  // How long every condition must hold before the lids start to fall.
+  // How long the head must stay motionless and quiet before the lids start to fall.
   "DozeDwellSeconds": 45.0,
 
   // Further dozing before the eyes go to nearly shut.
   "SleepDwellSeconds": 60.0,
 
-  // How far below its own resting angle the head must hang to count as down. The resting angle is
-  // learned over time, so sitting with a habitually low head does not trigger it.
-  "DozePitchDegrees": 25.0,
+  // Averaged head speed below which the head counts as motionless. Wearing a headset keeps the head
+  // moving, so real stillness means the wearer has stopped. Raise it if the eyes never close, lower
+  // it if they close while you are still awake. Where the head points is deliberately ignored.
+  "DozeStillnessRadPerSecond": 0.06,
 
   // Capture device index; -1 selects the system default capture device.
   "MicDeviceNumber": -1,

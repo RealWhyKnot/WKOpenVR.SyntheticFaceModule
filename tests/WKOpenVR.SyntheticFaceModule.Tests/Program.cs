@@ -75,7 +75,6 @@ var tests = new (string Name, Action Body)[]
     ("Module reports no-channels status when idle", ModuleReportsNoChannelsStatus),
     ("Package dependencies are allowed", PackageDependenciesAreAllowed),
     ("Head tracker reads yaw and pitch rate", HeadTrackerReadsRates),
-    ("Head tracker learns a resting pitch", HeadTrackerLearnsRestingPitch),
     ("VOR opposes head yaw and recentres", VorOpposesHeadYaw),
     ("Saccades pause while the head moves", SaccadesPauseWhileHeadMoves),
     ("Eyes lead a head turn", EyesLeadHeadTurn),
@@ -83,8 +82,11 @@ var tests = new (string Name, Action Body)[]
     ("Hesitation averts gaze", HesitationAvertsGaze),
     ("Asymmetry is bounded and never inverted", AsymmetryIsBoundedAndNeverInverted),
     ("Asymmetry off restores an even face", AsymmetryOffRestoresEvenFace),
-    ("Doze needs every gate", DozeNeedsEveryGate),
+    ("Doze needs a still and silent head", DozeNeedsAStillAndSilentHead),
+    ("Slight head motion keeps the eyes open", SlightHeadMotionKeepsEyesOpen),
     ("Doze closes slowly and opens fast", DozeClosesSlowlyAndOpensFast),
+    ("Head motion ends a doze", HeadMotionEndsADoze),
+    ("A stalled pose does not doze", StalledPoseDoesNotDoze),
     ("Doze wakes fast", DozeWakesFast),
     ("No head pose leaves the eyes open", NoHeadPoseLeavesEyesOpen),
     ("Settings descriptor matches config defaults", SettingsDescriptorMatchesConfigDefaults),
@@ -1085,7 +1087,7 @@ static void HeadTrackerReadsRates()
     var script = new ScriptedHead().Still(0.2f).Yaw(0.5f, 0.4f);
     for (int i = 0; i < script.Count; i++)
     {
-        tracker.Update(script.At(i), 1f / 120f, 0.3f, 1f);
+        tracker.Update(script.At(i), 1f / 120f, 0.3f);
     }
 
     AssertTrue(tracker.Valid);
@@ -1096,35 +1098,11 @@ static void HeadTrackerReadsRates()
     var pitchScript = new ScriptedHead().Still(0.2f).Pitch(0.5f, -0.4f);
     for (int i = 0; i < pitchScript.Count; i++)
     {
-        down.Update(pitchScript.At(i), 1f / 120f, 0.3f, 1f);
+        down.Update(pitchScript.At(i), 1f / 120f, 0.3f);
     }
 
-    // Pitching down is a negative rate and leaves the gaze direction below the horizon.
+    // Pitching down is a negative rate. Only the rate matters: where the head points is not tracked.
     AssertTrue(down.PitchRate is > -0.45f and < -0.35f);
-    AssertTrue(down.Pitch < -0.15f);
-}
-
-static void HeadTrackerLearnsRestingPitch()
-{
-    // A head held a little low settles to a new neutral, so posture alone never reads as dozing.
-    var tracker = new HeadMotionTracker();
-    var script = new ScriptedHead().HoldPitch(120f, -0.12f);
-    for (int i = 0; i < script.Count; i++)
-    {
-        tracker.Update(script.At(i), 1f / 120f, 0.5f, 0.22f);
-    }
-
-    AssertTrue(MathF.Abs(tracker.PitchBelowNeutral) < 0.05f);
-
-    // Past the freeze angle the neutral stops following, so a real head drop still registers.
-    var dropped = new HeadMotionTracker();
-    var dropScript = new ScriptedHead().Still(1f).HoldPitch(120f, -0.6f);
-    for (int i = 0; i < dropScript.Count; i++)
-    {
-        dropped.Update(dropScript.At(i), 1f / 120f, 0.5f, 0.22f);
-    }
-
-    AssertTrue(dropped.PitchBelowNeutral > 0.5f);
 }
 
 static void VorOpposesHeadYaw()
@@ -1350,37 +1328,61 @@ static void AsymmetryOffRestoresEvenFace()
 
 // ---- Doze ----
 
-static void DozeNeedsEveryGate()
+static void DozeNeedsAStillAndSilentHead()
 {
-    // Head down and silent, but the head keeps making small corrections: someone reading.
-    List<StepRecord> reading = RunScript(
+    // Ordinary headset wearing: the head is never quite still, so the eyes never close.
+    List<StepRecord> fidgeting = RunScript(
         NewModule(),
         new ScriptedAudio().Silence(130f),
-        new ScriptedHead().Still(1f).HoldPitch(1f, -0.6f).Jitter(128f, 0.9f));
-    AssertTrue(MedianOpenness(reading, 60f, 130f) > 0.85f);
+        new ScriptedHead().Still(1f).Jitter(129f, 0.35f));
+    AssertTrue(MedianOpenness(fidgeting, 60f, 130f) > 0.85f);
 
-    // Head down and still, but talking the whole time.
+    // Perfectly still, but talking the whole time.
     List<StepRecord> talking = RunScript(
         NewModule(),
         new ScriptedAudio().Silence(1f).Pulses(129f, 1.2f),
-        new ScriptedHead().Still(1f).HoldPitch(129f, -0.6f));
+        new ScriptedHead().Still(130f));
     AssertTrue(MedianOpenness(talking, 60f, 130f) > 0.85f);
 
-    // Silent and still, but the head is barely lowered.
-    List<StepRecord> upright = RunScript(
-        NewModule(),
-        new ScriptedAudio().Silence(130f),
-        new ScriptedHead().Still(1f).HoldPitch(129f, -0.1f));
-    AssertTrue(MedianOpenness(upright, 60f, 130f) > 0.85f);
-
-    // Every gate holding: the lids fall, and only then.
+    // Still and silent: the lids fall, and only here.
     List<StepRecord> dozing = RunScript(
         NewModule(),
         new ScriptedAudio().Silence(130f),
-        new ScriptedHead().Still(1f).HoldPitch(129f, -0.6f));
+        new ScriptedHead().Still(130f));
     AssertTrue(MedianOpenness(dozing, 0f, 44f) > 0.85f);
     AssertTrue(MedianOpenness(dozing, 50f, 100f) < 0.45f);
     AssertTrue(MedianOpenness(dozing, 115f, 130f) < 0.15f);
+}
+
+// The whole premise: a headset makes real stillness hard, so even slight motion has to block a doze.
+static void SlightHeadMotionKeepsEyesOpen()
+{
+    var doze = new DozeStateMachine();
+    var head = new HeadMotionTracker();
+    const float dt = 1f / 120f;
+
+    // Twice the default threshold, which is far less than looking around costs.
+    var drifting = new ScriptedHead().Jitter(200f, 0.12f);
+    for (int i = 0; i < drifting.Count; i++)
+    {
+        head.Update(drifting.At(i), dt, 0.5f);
+        doze.Update(head, speaking: false, dt, enabled: true, 0.06f, 45f, 60f);
+    }
+
+    AssertEqual((int)DozeState.Awake, (int)doze.State);
+    AssertEqual(0f, doze.LidClosure);
+
+    // A motionless head over the same stretch does doze, so the gate is the motion and nothing else.
+    var motionless = new ScriptedHead().Still(200f);
+    var stillDoze = new DozeStateMachine();
+    var stillHead = new HeadMotionTracker();
+    for (int i = 0; i < motionless.Count; i++)
+    {
+        stillHead.Update(motionless.At(i), dt, 0.5f);
+        stillDoze.Update(stillHead, speaking: false, dt, enabled: true, 0.06f, 45f, 60f);
+    }
+
+    AssertEqual((int)DozeState.Asleep, (int)stillDoze.State);
 }
 
 // Blinks make lid timing unreadable end to end, so the ramp itself is measured on the state machine.
@@ -1388,17 +1390,16 @@ static void DozeClosesSlowlyAndOpensFast()
 {
     var doze = new DozeStateMachine();
     var head = new HeadMotionTracker();
-    var script = new ScriptedHead().Still(1f).HoldPitch(120f, -0.6f);
+    var script = new ScriptedHead().Still(120f);
     const float dt = 1f / 120f;
-    float pitchRadians = 25f * MathF.PI / 180f;
 
     float time = 0f;
     float closeStart = -1f;
     float dozeReached = -1f;
     for (int i = 0; i < script.Count; i++)
     {
-        head.Update(script.At(i), dt, 0.5f, pitchRadians * 0.5f);
-        doze.Update(head, speaking: false, dt, enabled: true, pitchRadians, 45f, 60f);
+        head.Update(script.At(i), dt, 0.5f);
+        doze.Update(head, speaking: false, dt, enabled: true, 0.06f, 45f, 60f);
         if (closeStart < 0f && doze.LidClosure > 0.01f)
         {
             closeStart = time;
@@ -1413,7 +1414,7 @@ static void DozeClosesSlowlyAndOpensFast()
     }
 
     // Nothing moves before the dwell is served, and the fall takes about three quarters of a second.
-    AssertTrue(closeStart is >= 45.5f and <= 47f);
+    AssertTrue(closeStart is >= 44f and <= 46f);
     AssertTrue(dozeReached - closeStart >= 0.5f);
     AssertEqual((int)DozeState.Asleep, (int)doze.State);
     AssertTrue(doze.Breath > 0f);
@@ -1421,8 +1422,8 @@ static void DozeClosesSlowlyAndOpensFast()
     float wakeStart = time;
     while (doze.LidClosure > 0.05f && time - wakeStart < 1f)
     {
-        head.Update(script.At(script.Count - 1), dt, 0.5f, pitchRadians * 0.5f);
-        doze.Update(head, speaking: true, dt, enabled: true, pitchRadians, 45f, 60f);
+        head.Update(script.At(script.Count - 1), dt, 0.5f);
+        doze.Update(head, speaking: true, dt, enabled: true, 0.06f, 45f, 60f);
         time += dt;
     }
 
@@ -1431,12 +1432,59 @@ static void DozeClosesSlowlyAndOpensFast()
     AssertEqual(0f, doze.Breath);
 }
 
+// A single turn of the head is enough to end a doze, without waiting for the averaged speed.
+static void HeadMotionEndsADoze()
+{
+    var doze = new DozeStateMachine();
+    var head = new HeadMotionTracker();
+    const float dt = 1f / 120f;
+    var still = new ScriptedHead().Still(120f);
+    for (int i = 0; i < still.Count; i++)
+    {
+        head.Update(still.At(i), dt, 0.5f);
+        doze.Update(head, speaking: false, dt, enabled: true, 0.06f, 45f, 60f);
+    }
+
+    AssertEqual((int)DozeState.Asleep, (int)doze.State);
+
+    var turn = new ScriptedHead().Yaw(0.5f, 0.8f);
+    int steps = 0;
+    for (int i = 0; i < turn.Count && doze.State != DozeState.Awake; i++)
+    {
+        head.Update(turn.At(i), dt, 0.5f);
+        doze.Update(head, speaking: false, dt, enabled: true, 0.06f, 45f, 60f);
+        steps++;
+    }
+
+    AssertEqual((int)DozeState.Awake, (int)doze.State);
+    AssertTrue(steps / 120f <= 0.1f);
+}
+
+// A driver that stops publishing is a stalled pose, not a motionless head.
+static void StalledPoseDoesNotDoze()
+{
+    var doze = new DozeStateMachine();
+    var head = new HeadMotionTracker();
+    const float dt = 1f / 120f;
+    var frozen = new HeadInput(true, System.Numerics.Quaternion.Identity, System.Numerics.Vector3.Zero, 7, 0.004f);
+
+    for (int i = 0; i < 120 * 130; i++)
+    {
+        head.Update(frozen, dt, 0.5f);
+        doze.Update(head, speaking: false, dt, enabled: true, 0.06f, 45f, 60f);
+    }
+
+    AssertTrue(!head.Valid);
+    AssertEqual((int)DozeState.Awake, (int)doze.State);
+    AssertEqual(0f, doze.LidClosure);
+}
+
 static void DozeWakesFast()
 {
     List<StepRecord> run = RunScript(
         NewModule(),
         new ScriptedAudio().Silence(120f).Speech(2f, rms: 0.35f),
-        new ScriptedHead().Still(1f).HoldPitch(121f, -0.6f));
+        new ScriptedHead().Still(122f));
 
     AssertTrue(MedianOpenness(run, 110f, 119f) < 0.15f);
 

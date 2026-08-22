@@ -46,10 +46,10 @@ missing fields fall back to the defaults below.
 | `HeadMovingThreshold` | `0.5` | Head speed, in radians per second, above which idle saccades pause: a turning head carries the gaze shift itself. |
 | `SocialGazeEnabled` | `true` | Hold the listener's face more while quiet than while speaking, and glance away at the start of an utterance. |
 | `AsymmetryIntensity` | `1.0` | Left/right imbalance in expressions: one side leads slightly. 0 restores a perfectly even face. |
-| `DozeEnabled` | `true` | Let the eyes close when the head has been down, still and silent for a long time. Needs a headset; without one the eyes never close on their own. |
-| `DozeDwellSeconds` | `45.0` | How long every condition must hold before the lids start to fall. |
+| `DozeEnabled` | `true` | Let the eyes close after a long stretch of a motionless, silent head. Needs a headset; without one the eyes never close on their own. |
+| `DozeDwellSeconds` | `45.0` | How long the head must stay motionless and quiet before the lids start to fall. |
 | `SleepDwellSeconds` | `60.0` | Further dozing before the eyes go to nearly shut. |
-| `DozePitchDegrees` | `25.0` | How far below its own resting angle the head must hang to count as down. The resting angle is learned, so a habitually low head does not trigger it. |
+| `DozeStillnessRadPerSecond` | `0.06` | Averaged head speed below which the head counts as motionless. Wearing a headset keeps the head moving, so real stillness means the wearer has stopped; where the head points is deliberately ignored, since a low head is as likely to be reading as dozing. |
 | `MicDeviceNumber` | `-1` | Capture device index; `-1` = system default. |
 | `MicDeviceName` | `null` | Prefer the first capture device whose name contains this text (overrides the index when matched). |
 | `EmotionModelPath` | `null` | Path to a license-clean ONNX speech-emotion model used when `QualityMode` is on. |

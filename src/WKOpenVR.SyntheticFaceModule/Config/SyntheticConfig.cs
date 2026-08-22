@@ -88,8 +88,9 @@ public sealed class SyntheticConfig
     // Further seconds of dozing before the eyes go to nearly shut.
     public float SleepDwellSeconds { get; set; } = 60.0f;
 
-    // How far below its own resting pitch the head must hang to count as down, degrees.
-    public float DozePitchDegrees { get; set; } = 25.0f;
+    // Averaged head speed below which the head counts as still, radians per second. Wearing a
+    // headset keeps the head moving, so genuine stillness is the whole signal.
+    public float DozeStillnessRadPerSecond { get; set; } = 0.06f;
 
     /// <summary>WaveIn device index; -1 selects the default capture device (WAVE_MAPPER).</summary>
     public int MicDeviceNumber { get; set; } = -1;
