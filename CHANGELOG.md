@@ -6,6 +6,12 @@ The `release.yml` body for each tag is composed mechanically from the commit sli
 
 ## Unreleased
 
+_No notable changes since the last release._
+
+---
+
+## v2026.8.22.0-beta -- 2026-08-22
+
 ### Added
 - **module:** Fire brow, eye and smile episodes from vocal tone (d273ce0)
 - **module:** Expose every expression channel in the settings descriptor (fb3156d)
