@@ -25,10 +25,10 @@
     { "key": "HeadMovingThreshold", "type": "float", "label": "Head speed that pauses saccades (rad/s)", "min": 0.1, "max": 2.0, "default": 0.5 },
     { "key": "SocialGazeEnabled", "type": "bool", "label": "Speaking/listening gaze", "default": true },
     { "key": "AsymmetryIntensity", "type": "float", "label": "Expression asymmetry", "min": 0.0, "max": 2.0, "default": 1.0 },
-    { "key": "DozeEnabled", "type": "bool", "label": "Close eyes when head is down and quiet", "default": true },
+    { "key": "DozeEnabled", "type": "bool", "label": "Close eyes when the head stops moving", "default": true },
     { "key": "DozeDwellSeconds", "type": "float", "label": "Seconds before eyes start to droop", "min": 10.0, "max": 300.0, "default": 45.0 },
     { "key": "SleepDwellSeconds", "type": "float", "label": "Further seconds before eyes shut", "min": 10.0, "max": 600.0, "default": 60.0 },
-    { "key": "DozeStillnessRadPerSecond", "type": "float", "label": "Head speed that still counts as motionless (rad/s)", "min": 0.01, "max": 0.5, "default": 0.06 },
+    { "key": "DozeStillnessRadPerSecond", "type": "float", "label": "Head speed that counts as motionless (rad/s)", "min": 0.01, "max": 0.5, "default": 0.06 },
     { "key": "MicDeviceNumber", "type": "int", "label": "Mic device index (-1 = default)", "min": -1, "max": 63, "default": -1 },
     { "key": "MicDeviceName", "type": "string", "label": "Mic device name match", "default": "" }
   ]
