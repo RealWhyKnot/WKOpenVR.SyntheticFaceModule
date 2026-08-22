@@ -6,6 +6,12 @@ The `release.yml` body for each tag is composed mechanically from the commit sli
 
 ## Unreleased
 
+_No notable changes since the last release._
+
+---
+
+## v2026.8.22.1 -- 2026-08-22
+
 ### Added
 - **eyes:** Couple gaze to head motion and add a head-down doze state (3167b81)
 - **eyes:** Doze on a motionless head instead of a lowered one (9a346d5)
