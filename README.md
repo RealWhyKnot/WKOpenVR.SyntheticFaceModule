@@ -21,9 +21,10 @@ hardware:
 ## Configuration
 
 Settings are read from `synthetic_face.json` (under `%LocalAppDataLow%\WKOpenVR\profiles\`, falling
-back to the module directory) and hot-reload at runtime. A default file is written on first run if
-none exists, so it is easy to find and edit; see [`synthetic_face.example.json`](synthetic_face.example.json)
-for an annotated copy. Unknown or missing fields fall back to the defaults below.
+back to the module directory) and hot-reload at runtime. The WKOpenVR app edits this file from the
+module's own tab and writes only the settings you change; see
+[`synthetic_face.example.json`](synthetic_face.example.json) for an annotated copy. Unknown or
+missing fields fall back to the defaults below.
 
 | Setting | Default | What it does |
 | --- | --- | --- |

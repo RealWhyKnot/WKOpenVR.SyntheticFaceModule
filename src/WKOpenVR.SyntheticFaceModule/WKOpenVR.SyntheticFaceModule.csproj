@@ -8,6 +8,7 @@
     <WkOpenVrFaceSdkVersion Condition="'$(WkOpenVrFaceSdkVersion)' == ''">2026.6.7.1</WkOpenVrFaceSdkVersion>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="WKOpenVR.SyntheticFaceModule.Tests" />
     <PackageReference Include="WKOpenVR.FaceTracking.Sdk" Version="$(WkOpenVrFaceSdkVersion)" />
     <PackageReference Include="NAudio" Version="2.2.1" />
     <!-- Quality-tier speech-emotion inference. Runtime is MIT; no model weights are bundled. -->

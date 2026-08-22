@@ -53,6 +53,7 @@ var tests = new (string Name, Action Body)[]
     ("Speaker baseline produces z-scores", SpeakerBaselineZScores),
     ("Heuristic arousal rises with loudness", HeuristicArousalRisesWithLoudness),
     ("Crossfade falls back to heuristic without model", CrossfadeFallsBackWithoutModel),
+    ("Step is deterministic for seed", StepIsDeterministicForSeed),
     ("Module writes mouth frame", ModuleWritesMouthFrame),
     ("Module sets eye flag when eyes enabled", ModuleSetsEyeFlagWhenEnabled),
     ("Module leaves eyes to VRChat by default", ModuleLeavesEyesByDefault),
@@ -806,6 +807,23 @@ static void CrossfadeFallsBackWithoutModel()
 
 // ---- Module integration ----
 
+static void StepIsDeterministicForSeed()
+{
+    var script = new ScriptedAudio().Speech(2f).Silence(1f);
+    List<StepRecord> a = RunScript(NewModule(), script);
+    List<StepRecord> b = RunScript(NewModule(), script);
+
+    AssertTrue(a.Count == b.Count);
+    for (int k = 0; k < a.Count; k++)
+    {
+        AssertTrue(a[k].Openness == b[k].Openness && a[k].GazeX == b[k].GazeX && a[k].GazeY == b[k].GazeY);
+        for (int i = 0; i < a[k].Expressions.Length; i++)
+        {
+            AssertTrue(a[k].Expressions[i] == b[k].Expressions[i]);
+        }
+    }
+}
+
 static void ModuleReportsHealthyStatus()
 {
     var source = new FixedAudioAnalysisSource(MakeVoiceFrame(rms: 0.3f));
@@ -999,6 +1017,41 @@ static AudioAnalysisFrame MakeVoiceFrame(float rms, float centroid = 1200f, floa
     };
 }
 
+// ---- scripted timeline ----
+
+static SyntheticFaceModule NewModule(SyntheticConfig? config = null)
+{
+    var module = new SyntheticFaceModule(new FixedAudioAnalysisSource(MakeVoiceFrame(rms: 1e-4f, voiced: false)), config ?? new SyntheticConfig());
+    module.InitializeAsync(
+        new FaceModuleContext(Path.GetTempPath()),
+        new FaceModuleInitRequest(EyeAvailable: true, ExpressionAvailable: true, HeadAvailable: false),
+        CancellationToken.None).AsTask().GetAwaiter().GetResult();
+    return module;
+}
+
+// Steps the module at 120 Hz over a 20 ms-per-frame script: 2,3,2,3,2 steps per frame (exactly
+// 0.1 s per five frames), the same re-read cadence the live loop sees. Step k sits at k/120 s.
+static List<StepRecord> RunScript(SyntheticFaceModule module, ScriptedAudio script)
+{
+    var records = new List<StepRecord>(script.Frames.Count * 3);
+    var face = new FaceFrame();
+    for (int i = 0; i < script.Frames.Count; i++)
+    {
+        int steps = i % 5 is 1 or 3 ? 3 : 2;
+        for (int s = 0; s < steps; s++)
+        {
+            module.Step(script.Frames[i], 1f / 120f, face);
+            records.Add(new StepRecord(
+                (float[])face.Expressions.Clone(),
+                face.Eye.Left.Openness,
+                face.Eye.Left.GazeX,
+                face.Eye.Left.GazeY));
+        }
+    }
+
+    return records;
+}
+
 static string FindRepoRoot()
 {
     var dir = new DirectoryInfo(AppContext.BaseDirectory);
@@ -1029,6 +1082,67 @@ static void AssertEqual(float expected, float actual)
     {
         throw new InvalidOperationException("Expected " + expected + " but got " + actual);
     }
+}
+
+sealed record StepRecord(float[] Expressions, float Openness, float GazeX, float GazeY);
+
+// A 20 ms-per-frame audio timeline carrying the prosody cues the module keys on. Plain speech
+// wobbles pitch 10% at 5 Hz and carries onset flux, so it reads as neither a monotone nor a rising
+// terminal. Keep speech runs under 3 s: the noise floor tracks up (tau 4 s) and closes the VAD on a
+// constant level.
+sealed class ScriptedAudio
+{
+    private const float FrameSeconds = 0.02f;
+
+    public List<AudioAnalysisFrame> Frames { get; } = new();
+
+    public ScriptedAudio Speech(float seconds, float rms = 0.1f, float pitch = 150f)
+        => Add(seconds, t => Voice(rms, pitch * (1f + (0.10f * MathF.Sin(2f * MathF.PI * 5f * t))), flux: 0.1f));
+
+    public ScriptedAudio Rise(float seconds, float fromHz, float toHz, float rms = 0.1f)
+        => Add(seconds, t => Voice(rms, fromHz + ((toHz - fromHz) * t / seconds), flux: 0.1f));
+
+    public ScriptedAudio Monotone(float seconds, float rms = 0.1f, float pitch = 150f)
+        => Add(seconds, _ => Voice(rms, pitch, flux: 0f));
+
+    public ScriptedAudio Pulses(float seconds, float hz, float rms = 0.1f, float pitch = 150f)
+        => Add(seconds, t => (t * hz) % 1f < 0.5f ? Voice(rms, pitch, flux: 0.1f) : Quiet(rms * 0.2f));
+
+    public ScriptedAudio Silence(float seconds) => Add(seconds, _ => Quiet(1e-4f));
+
+    private ScriptedAudio Add(float seconds, Func<float, AudioAnalysisFrame> make)
+    {
+        int count = (int)MathF.Round(seconds / FrameSeconds);
+        for (int i = 0; i < count; i++)
+        {
+            AudioAnalysisFrame frame = make(i * FrameSeconds);
+            frame.TimestampSeconds = Frames.Count * FrameSeconds;
+            Frames.Add(frame);
+        }
+
+        return this;
+    }
+
+    private static AudioAnalysisFrame Voice(float rms, float pitch, float flux) => new(13)
+    {
+        Rms = rms,
+        Voiced = true,
+        PitchHz = pitch,
+        SpectralCentroidHz = 1200f,
+        SpectralRolloffHz = 1800f,
+        SpectralFlux = flux,
+        SampleRate = 16000,
+        DurationSeconds = FrameSeconds,
+    };
+
+    private static AudioAnalysisFrame Quiet(float rms) => new(13)
+    {
+        Rms = rms,
+        SpectralCentroidHz = 1200f,
+        SpectralRolloffHz = 1800f,
+        SampleRate = 16000,
+        DurationSeconds = FrameSeconds,
+    };
 }
 
 sealed class FixedAudioAnalysisSource : IAudioAnalysisSource

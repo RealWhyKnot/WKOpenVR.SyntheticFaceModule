@@ -96,7 +96,6 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
         if (!_configIsFixed)
         {
             _configLoader = new SyntheticConfigLoader(context.ConfigDirectory, _log);
-            _configLoader.WriteDefaultIfMissing();
             _configLoader.LoadNow();
             _config = _configLoader.Current;
         }
@@ -182,15 +181,22 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
                 $"eyes={_config.DriveEyes} quality={_config.QualityMode}");
         }
 
-        bool driveMouth = _expressionAllowed && _config.DriveMouth;
-        bool driveEmotion = _expressionAllowed && _config.DriveEmotion;
-        bool driveEyes = _eyeAllowed && _config.DriveEyes;
-
         AudioAnalysisFrame? audio = null;
         if (_source is not null && _source.TryRead(out AudioAnalysisFrame? snapshot))
         {
             audio = snapshot;
         }
+
+        Step(audio, dt, frame);
+        return ValueTask.CompletedTask;
+    }
+
+    // One pipeline pass at an explicit dt, so a scripted timeline can be driven deterministically.
+    internal void Step(AudioAnalysisFrame? audio, float dt, FaceFrame frame)
+    {
+        bool driveMouth = _expressionAllowed && _config.DriveMouth;
+        bool driveEmotion = _expressionAllowed && _config.DriveEmotion;
+        bool driveEyes = _eyeAllowed && _config.DriveEyes;
 
         float activity = 0f;
         bool isSpeech = false;
@@ -244,7 +250,6 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
         FaceFrameValidator.Sanitize(frame);
 
         LogDiagnostics(dt, audio, activity, isSpeech, prosody, eyes, frame);
-        return ValueTask.CompletedTask;
     }
 
     public ValueTask TeardownAsync(CancellationToken cancellationToken)

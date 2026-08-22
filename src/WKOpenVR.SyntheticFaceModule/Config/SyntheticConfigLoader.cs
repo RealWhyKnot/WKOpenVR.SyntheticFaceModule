@@ -5,10 +5,10 @@ namespace WKOpenVR.SyntheticFaceModule.Config;
 
 /// <summary>
 /// Loads <see cref="SyntheticConfig"/> from disk and hot-reloads it on change. Resolution order:
-/// the stable per-user path <c>%LocalAppDataLow%\WKOpenVR\profiles\synthetic_face.json</c> (which an
-/// overlay can write and which survives module updates), then a fallback file in the module's own
-/// config directory. Missing or malformed files yield defaults; the last good config is retained on
-/// a parse error. Reloads are throttled so polling from the per-frame update loop is cheap.
+/// the stable per-user path <c>%LocalAppDataLow%\WKOpenVR\profiles\synthetic_face.json</c> (which the
+/// app writes and which survives module updates), then a fallback file in the module's own config
+/// directory. Missing or malformed files yield defaults; the last good config is retained on a
+/// parse error. Reloads are throttled so polling from the per-frame update loop is cheap.
 /// </summary>
 public sealed class SyntheticConfigLoader
 {
@@ -17,11 +17,6 @@ public sealed class SyntheticConfigLoader
         PropertyNameCaseInsensitive = true,
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
-    };
-
-    private static readonly JsonSerializerOptions WriteOptions = new()
-    {
-        WriteIndented = true,
     };
 
     private readonly string _primaryPath;
@@ -45,39 +40,11 @@ public sealed class SyntheticConfigLoader
     /// <summary>The most recently loaded configuration (never null).</summary>
     public SyntheticConfig Current { get; private set; }
 
-    /// <summary>Stable per-user config path the loader prefers and writes defaults to.</summary>
+    /// <summary>Stable per-user config path the loader prefers.</summary>
     public string PrimaryPath => _primaryPath;
 
     /// <summary>The path the current config was loaded from, or null if defaults are in use.</summary>
     public string? LoadedPath => _loadedPath;
-
-    /// <summary>
-    /// Writes a default config to the primary path if neither the primary nor fallback file exists,
-    /// so users have a discoverable, editable file. Best-effort; failures are logged, not thrown.
-    /// </summary>
-    public void WriteDefaultIfMissing()
-    {
-        if (File.Exists(_primaryPath) || File.Exists(_fallbackPath))
-        {
-            return;
-        }
-
-        try
-        {
-            string? dir = Path.GetDirectoryName(_primaryPath);
-            if (!string.IsNullOrEmpty(dir))
-            {
-                Directory.CreateDirectory(dir);
-            }
-
-            File.WriteAllText(_primaryPath, JsonSerializer.Serialize(new SyntheticConfig(), WriteOptions));
-            _log?.Info($"[synthetic/config] wrote default config to {_primaryPath}");
-        }
-        catch (Exception ex)
-        {
-            _log?.Warn($"[synthetic/config] could not write default config ({ex.Message}).");
-        }
-    }
 
     /// <summary>Force an immediate (re)load from disk regardless of the throttle.</summary>
     public void LoadNow()
