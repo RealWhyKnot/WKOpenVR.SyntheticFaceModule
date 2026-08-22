@@ -14,6 +14,7 @@ The `release.yml` body for each tag is composed mechanically from the commit sli
 - **face:** Stop over-blinking, rest the mouth, and make laughter reachable (f78ced5)
 - **prosody:** Detect unvoiced laughter (6360f69)
 - **ui:** Describe the doze setting by motion rather than head angle (a75d603)
+- **release:** Keep a first stable release from failing on a missing prior tag (534591a)
 
 ---
 
