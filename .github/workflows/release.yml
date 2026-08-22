@@ -100,6 +100,10 @@ jobs:
             ./.github/scripts/Update-Changelog.ps1 -Mode Append -Range "$prevTag..$releaseRef"
           } else {
             Write-Host "No previous release tag found; promoting the current Unreleased section."
+            # git describe leaves a failure code behind when it finds nothing, and the runner
+            # exits the step with whatever $LASTEXITCODE holds. Clear it so the first stable
+            # release of a repo, which by definition has no earlier stable tag, does not fail.
+            $global:LASTEXITCODE = 0
           }
 
           ./.github/scripts/Update-Changelog.ps1 -Mode Promote -Version $tag
