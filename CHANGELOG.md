@@ -9,6 +9,7 @@ The `release.yml` body for each tag is composed mechanically from the commit sli
 ### Fixed
 - **module:** Drive only shape combinations a real face can hold (0a7f9e1)
 - **module:** Correct the smile default in the settings descriptor (f84dff3)
+- **module:** Match mouth level and lip posture duty cycles to tracked speech (326c4db)
 
 ---
 
