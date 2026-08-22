@@ -6,6 +6,9 @@ The `release.yml` body for each tag is composed mechanically from the commit sli
 
 ## Unreleased
 
+### Added
+- **eyes:** Couple gaze to head motion and add a head-down doze state (3167b81)
+
 ### Fixed
 - **face:** Stop over-blinking, rest the mouth, and make laughter reachable (f78ced5)
 - **prosody:** Detect unvoiced laughter (6360f69)
