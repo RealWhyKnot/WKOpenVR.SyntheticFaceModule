@@ -1,6 +1,6 @@
 namespace WKOpenVR.SyntheticFaceModule.Eyes;
 
-/// <summary>Per-frame procedural eye state, applied symmetrically to both eyes by the mixer.</summary>
+// Per-frame procedural eye state, applied to both eyes by the mixer.
 public readonly record struct EyeOutput(
     float Openness,
     float GazeX,
@@ -9,19 +9,16 @@ public readonly record struct EyeOutput(
     float MinDilationMm,
     float MaxDilationMm);
 
-/// <summary>
-/// Combines the blink scheduler, micro-saccade gaze, and a near-constant pupil into a symmetric
-/// <see cref="EyeOutput"/>. Gaze shifts opportunistically nudge a blink (as in natural viewing), and
-/// eyelid openness couples mildly to downward gaze. Pupil drifts only slowly with arousal - never
-/// per syllable. Deterministic given a seeded <see cref="Random"/>.
-/// </summary>
+// Blink scheduler, micro-saccade gaze and a slow pupil combined into one EyeOutput. Gaze shifts
+// opportunistically nudge a blink, and eyelid openness couples mildly to downward gaze. The pupil
+// drifts only with arousal, never per syllable. Deterministic given a seeded Random.
 public sealed class ProceduralEyes
 {
     private const float BasePupilMm = 4.0f;
     private const float MinPupilMm = 3.0f;
     private const float MaxPupilMm = 5.0f;
 
-    /// <summary>Half the pupil's arousal travel; full span stays inside the advertised 3-5 mm.</summary>
+    // Half the pupil's arousal travel; full span stays inside the advertised 3-5 mm.
     private const float PupilArousalSwingMm = 0.8f;
 
     // Orbicularis oculi fires with 97% of saccadic gaze shifts larger than 33 degrees, and with
@@ -39,6 +36,17 @@ public sealed class ProceduralEyes
     private const float DroopDepthMax = 0.15f;
     private const float DroopDurationMinSeconds = 2.0f;
     private const float DroopDurationMaxSeconds = 6.0f;
+
+    // Eyes lead a head turn by up to tan(20 deg) horizontally before the counter-rotation pulls
+    // them back; LeadRateScale converts the head's rad/s into that lead.
+    private const float MaxLeadX = 0.364f;
+    private const float MaxLeadY = 0.30f;
+    private const float LeadRateScale = 0.25f;
+    private const float LeadDwellSeconds = 0.3f;
+
+    private const float HesitationAversionX = 0.30f;
+    private const float HesitationAversionY = 0.12f;
+    private const float HesitationDwellSeconds = 0.8f;
 
     private readonly Random _rng;
     private readonly BlinkScheduler _blink;
@@ -58,25 +66,55 @@ public sealed class ProceduralEyes
         _droopCountdown = NextDroopGap();
     }
 
-    public EyeOutput Update(float dtSeconds, float arousal = 0f, float blinksPerMinute = 15.9f)
+    public EyeOutput Update(
+        float dtSeconds,
+        float arousal = 0f,
+        float blinksPerMinute = 15.9f,
+        in EyeContext context = default)
     {
         _blink.BlinksPerMinute = blinksPerMinute;
 
-        _gaze.Update(dtSeconds, arousal);
-        if (_gaze.SaccadeStarted
+        if (context.MotionOnset && !context.Asleep)
+        {
+            // The eyes arrive first; the counter-rotation rolls them back as the head lands.
+            _gaze.LookAt(
+                LeadOffset(context.HeadYawRate, MaxLeadX),
+                _gaze.CenterY + LeadOffset(context.HeadPitchRate, MaxLeadY),
+                LeadDwellSeconds);
+        }
+
+        if (context.Hesitation && !context.Asleep)
+        {
+            float side = _rng.NextDouble() < 0.5 ? -1f : 1f;
+            _gaze.LookAt(side * HesitationAversionX, _gaze.CenterY + HesitationAversionY, HesitationDwellSeconds);
+        }
+
+        var drive = new GazeDrive(
+            HeadYawRate: context.HeadYawRate,
+            HeadPitchRate: context.HeadPitchRate,
+            HeadMoving: context.HeadMoving || context.Asleep,
+            Speaking: context.Speaking,
+            SocialGaze: context.SocialGaze && !context.Asleep,
+            VorGain: context.HeadValid ? context.VorGain : 0f,
+            VorRecenterSeconds: context.VorRecenterSeconds);
+
+        _gaze.Update(dtSeconds, arousal, drive);
+        if (!context.Asleep
+            && _gaze.SaccadeStarted
             && _gaze.SaccadeAmplitude >= BlinkSaccadeAmplitudeMin
             && _rng.NextDouble() < BlinkSaccadeProbability)
         {
             _blink.RequestBlinkSoon();
         }
 
-        float openness = _blink.Update(dtSeconds, arousal);
+        float openness = context.Asleep ? 1f : _blink.Update(dtSeconds, arousal);
 
         // Mild eyelid<->gaze coupling: looking down lowers the lids slightly.
         float downward = MathF.Max(0f, -_gaze.GazeY);
         openness *= 1f - (0.15f * downward);
 
         openness *= 1f - UpdateDroop(dtSeconds, arousal);
+        openness *= 1f - Math.Clamp(context.LidClosure, 0f, 1f);
 
         float targetPupil = BasePupilMm + (PupilArousalSwingMm * (Math.Clamp(arousal, 0f, 1f) - 0.5f) * 2f);
         float pupil = _pupil.Update(targetPupil, dtSeconds);
@@ -90,7 +128,6 @@ public sealed class ProceduralEyes
             MaxDilationMm: MaxPupilMm);
     }
 
-    /// <summary>Advances the droop scheduler; returns the current droop amount (0 = none).</summary>
     private float UpdateDroop(float dtSeconds, float arousal)
     {
         if (_droopTime < 0f)
@@ -124,6 +161,12 @@ public sealed class ProceduralEyes
     {
         double u = Math.Max(1e-6, _rng.NextDouble());
         return (float)(-Math.Log(u) * 60.0 / DroopEventsPerMinute);
+    }
+
+    private static float LeadOffset(float rate, float maximum)
+    {
+        float magnitude = MathF.Min(MathF.Abs(rate) * LeadRateScale, maximum);
+        return rate >= 0f ? magnitude : -magnitude;
     }
 
     private static float Lerp(float a, float b, float t) => a + ((b - a) * t);

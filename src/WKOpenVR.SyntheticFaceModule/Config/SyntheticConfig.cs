@@ -64,6 +64,33 @@ public sealed class SyntheticConfig
     /// </summary>
     public float IdleIntensity { get; set; } = 1.0f;
 
+    // Eye counter-rotation against head movement. 0 disables head coupling entirely.
+    public float VorGain { get; set; } = 0.95f;
+
+    // How long the eyes take to drift back to centre once the head stops, seconds.
+    public float VorRecenterSeconds { get; set; } = 0.3f;
+
+    // Head speed above which idle saccades pause, rad/s.
+    public float HeadMovingThreshold { get; set; } = 0.5f;
+
+    // Look at the listener more while silent than while speaking.
+    public bool SocialGazeEnabled { get; set; } = true;
+
+    // Left/right expression asymmetry. 0 restores a perfectly even face.
+    public float AsymmetryIntensity { get; set; } = 1.0f;
+
+    // Let the eyes close when the head has been down, still and silent for a long time.
+    public bool DozeEnabled { get; set; } = true;
+
+    // Seconds all three doze gates must hold before the lids start to fall.
+    public float DozeDwellSeconds { get; set; } = 45.0f;
+
+    // Further seconds of dozing before the eyes go to nearly shut.
+    public float SleepDwellSeconds { get; set; } = 60.0f;
+
+    // How far below its own resting pitch the head must hang to count as down, degrees.
+    public float DozePitchDegrees { get; set; } = 25.0f;
+
     /// <summary>WaveIn device index; -1 selects the default capture device (WAVE_MAPPER).</summary>
     public int MicDeviceNumber { get; set; } = -1;
 

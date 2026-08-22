@@ -41,6 +41,39 @@
   // 0 disables it; 1 matches rates and amplitudes measured from real tracker recordings.
   "IdleIntensity": 1.0,
 
+  // How strongly the eyes counter-rotate against head movement so gaze holds still while the head
+  // turns. 0 turns head coupling off entirely. Needs a headset; ignored when there is no pose.
+  "VorGain": 0.95,
+
+  // How long the eyes take to drift back to centre once the head stops turning.
+  "VorRecenterSeconds": 0.3,
+
+  // Head speed, in radians per second, above which idle saccades pause: a turning head already
+  // carries the gaze shift, so firing extra saccades on top reads as jitter.
+  "HeadMovingThreshold": 0.5,
+
+  // Hold the listener's face more while quiet than while speaking, and glance away at the start of
+  // an utterance, the way people actually trade turns.
+  "SocialGazeEnabled": true,
+
+  // Left/right imbalance in expressions: one side leads slightly and runs a little stronger.
+  // 0 restores a perfectly even face.
+  "AsymmetryIntensity": 1.0,
+
+  // Let the eyes close when the head has been down, still and silent for a long time. Needs a
+  // headset: with no pose the eyes never close on their own, whatever the microphone hears.
+  "DozeEnabled": true,
+
+  // How long every condition must hold before the lids start to fall.
+  "DozeDwellSeconds": 45.0,
+
+  // Further dozing before the eyes go to nearly shut.
+  "SleepDwellSeconds": 60.0,
+
+  // How far below its own resting angle the head must hang to count as down. The resting angle is
+  // learned over time, so sitting with a habitually low head does not trigger it.
+  "DozePitchDegrees": 25.0,
+
   // Capture device index; -1 selects the system default capture device.
   "MicDeviceNumber": -1,
 

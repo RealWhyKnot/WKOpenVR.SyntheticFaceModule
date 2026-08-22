@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <OutputType>Library</OutputType>
-    <WkOpenVrFaceSdkVersion Condition="'$(WkOpenVrFaceSdkVersion)' == ''">2026.6.7.1</WkOpenVrFaceSdkVersion>
+    <WkOpenVrFaceSdkVersion Condition="'$(WkOpenVrFaceSdkVersion)' == ''">2026.8.22.0-F491</WkOpenVrFaceSdkVersion>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="WKOpenVR.SyntheticFaceModule.Tests" />

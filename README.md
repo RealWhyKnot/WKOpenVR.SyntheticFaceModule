@@ -41,9 +41,22 @@ missing fields fall back to the defaults below.
 | `MouthIntensity` | `0.4` | Scales the mouth output. 0.4 matches tracked jaw travel; 1.0 is the raw solver level. |
 | `BlinkRatePerMinute` | `15.9` | Spontaneous blinks per minute. Gaze shifts and vocal arousal still modulate it around this figure. |
 | `IdleIntensity` | `1.0` | Scales the always-on idle micro-motion (small brow/squint events while quiet; 0 disables). |
+| `VorGain` | `0.95` | How strongly the eyes counter-rotate against head movement, so gaze holds still while the head turns. 0 turns head coupling off. Needs a headset; ignored without one. |
+| `VorRecenterSeconds` | `0.3` | How long the eyes take to drift back to centre once the head stops. |
+| `HeadMovingThreshold` | `0.5` | Head speed, in radians per second, above which idle saccades pause: a turning head carries the gaze shift itself. |
+| `SocialGazeEnabled` | `true` | Hold the listener's face more while quiet than while speaking, and glance away at the start of an utterance. |
+| `AsymmetryIntensity` | `1.0` | Left/right imbalance in expressions: one side leads slightly. 0 restores a perfectly even face. |
+| `DozeEnabled` | `true` | Let the eyes close when the head has been down, still and silent for a long time. Needs a headset; without one the eyes never close on their own. |
+| `DozeDwellSeconds` | `45.0` | How long every condition must hold before the lids start to fall. |
+| `SleepDwellSeconds` | `60.0` | Further dozing before the eyes go to nearly shut. |
+| `DozePitchDegrees` | `25.0` | How far below its own resting angle the head must hang to count as down. The resting angle is learned, so a habitually low head does not trigger it. |
 | `MicDeviceNumber` | `-1` | Capture device index; `-1` = system default. |
 | `MicDeviceName` | `null` | Prefer the first capture device whose name contains this text (overrides the index when matched). |
 | `EmotionModelPath` | `null` | Path to a license-clean ONNX speech-emotion model used when `QualityMode` is on. |
+
+Head coupling and dozing both need a headset pose from the host. Running outside SteamVR, or on a
+host that predates it, leaves the eyes exactly as they were before: no counter-rotation, and no
+automatic eye closure from audio alone.
 
 The DSP path is pure managed code and is tested without audio hardware. Set the host's log level to
 Debug for a periodic per-stage snapshot, or Trace for a per-frame firehose, to diagnose behavior.

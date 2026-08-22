@@ -5,6 +5,7 @@ using WKOpenVR.SyntheticFaceModule.Coloring;
 using WKOpenVR.SyntheticFaceModule.Config;
 using WKOpenVR.SyntheticFaceModule.Dsp.Vad;
 using WKOpenVR.SyntheticFaceModule.Eyes;
+using WKOpenVR.SyntheticFaceModule.Head;
 using WKOpenVR.SyntheticFaceModule.Mixer;
 using WKOpenVR.SyntheticFaceModule.Mouth;
 using WKOpenVR.SyntheticFaceModule.Prosody;
@@ -38,6 +39,8 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
     private readonly EmotionColoringLayer _coloring = new();
     private readonly ProsodyEventDetector _events = new();
     private readonly SyntheticFrameMixer _mixer = new();
+    private readonly HeadMotionTracker _head = new();
+    private readonly DozeStateMachine _doze = new();
     private readonly float[] _mouthBuffer = new float[FaceExpressionCount.Value];
     private readonly float[] _emotionBuffer = new float[FaceExpressionCount.Value];
     private readonly float[] _idleBuffer = new float[FaceExpressionCount.Value];
@@ -50,6 +53,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
     private IProsodyEstimator? _prosody;
     private ProceduralEyes? _eyes;
     private IdleMotionLayer? _idle;
+    private AsymmetryLayer? _asymmetry;
     private IFaceModuleLogger _log = NullFaceModuleLogger.Instance;
 
     private bool _expressionAllowed;
@@ -80,7 +84,7 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
         "4df7850f-1d75-4665-9eab-6f07e0f3b5dc",
         "WKOpenVR Synthetic Face Module",
         "WhyKnot",
-        new Version(0, 5, 0));
+        new Version(0, 6, 0));
 
     public FaceModuleCapabilities Capabilities =>
         FaceModuleCapabilities.Eye | FaceModuleCapabilities.Expression | FaceModuleCapabilities.AudioInput;
@@ -107,8 +111,9 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
         _active = wantExpression || wantEyes;
 
         _eyes = new ProceduralEyes(_rng);
-        // Child RNG so idle event draws never perturb the eye stream's determinism.
+        // Child RNGs so idle and asymmetry draws never perturb the eye stream's determinism.
         _idle = new IdleMotionLayer(new Random(_rng.Next()));
+        _asymmetry = new AsymmetryLayer(new Random(_rng.Next()));
         _prosody = BuildProsodyEstimator(_config);
 
         if (_active)
@@ -162,6 +167,8 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
             _pacer.WaitForNext(cancellationToken);
         }
 
+        // Both this Clear and the mixer's wipe frame.Inputs, so the host's head pose is read first.
+        HeadInput head = ReadHeadInput(frame);
         frame.Clear();
         if (!_active)
         {
@@ -186,16 +193,39 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
             audio = snapshot;
         }
 
-        Step(audio, dt, frame);
+        Step(audio, dt, frame, head);
         return ValueTask.CompletedTask;
+    }
+
+    private static HeadInput ReadHeadInput(FaceFrame frame)
+    {
+        FaceHeadInput source = frame.Inputs.Head;
+        if (!source.IsValid)
+        {
+            return HeadInput.None;
+        }
+
+        return new HeadInput(
+            Valid: true,
+            Rotation: source.Rotation,
+            AngularVelocity: source.AngularVelocity,
+            SampleIndex: source.SampleIndex,
+            AgeSeconds: source.AgeSeconds);
     }
 
     // One pipeline pass at an explicit dt, so a scripted timeline can be driven deterministically.
     internal void Step(AudioAnalysisFrame? audio, float dt, FaceFrame frame)
     {
+        Step(audio, dt, frame, HeadInput.None);
+    }
+
+    internal void Step(AudioAnalysisFrame? audio, float dt, FaceFrame frame, in HeadInput head)
+    {
         bool driveMouth = _expressionAllowed && _config.DriveMouth;
         bool driveEmotion = _expressionAllowed && _config.DriveEmotion;
         bool driveEyes = _eyeAllowed && _config.DriveEyes;
+
+        _head.Update(head, dt, _config.HeadMovingThreshold, DozePitchRadians() * 0.5f);
 
         float activity = 0f;
         bool isSpeech = false;
@@ -213,11 +243,12 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
         }
 
         ProsodyState prosody = ProsodyState.Neutral;
+        ProsodyEvents events = default;
         bool emotionActive = driveEmotion && audio is not null && _prosody is not null;
         if (emotionActive)
         {
             prosody = _prosody!.Estimate(audio!, activity, isSpeech, dt);
-            ProsodyEvents events = _events.Update(audio!, isSpeech, prosody.Arousal);
+            events = _events.Update(audio!, isSpeech, prosody.Arousal);
             if (events != default)
             {
                 _log.Debug(
@@ -230,18 +261,44 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
 
         // Idle micro-motion runs whenever emotion channels are allowed, with or without
         // audio, so the face never goes dead during mic silence.
+        _doze.Update(
+            _head,
+            isSpeech,
+            dt,
+            _config.DozeEnabled && driveEyes,
+            DozePitchRadians(),
+            _config.DozeDwellSeconds,
+            _config.SleepDwellSeconds);
+
         bool idleActive = driveEmotion && _idle is not null;
         if (idleActive)
         {
             float idleArousal = prosody.SpeechActive ? prosody.Arousal : 0f;
             _idle!.Update(dt, idleArousal, _config.IdleIntensity, _idleBuffer);
+            if (_doze.Breath > 0f)
+            {
+                AddBreath(_idleBuffer, _doze.Breath);
+            }
         }
 
         EyeOutput? eyes = null;
         if (driveEyes && _eyes is not null)
         {
             float arousal = prosody.SpeechActive ? prosody.Arousal : 0f;
-            eyes = _eyes.Update(dt, arousal, _config.BlinkRatePerMinute);
+            var context = new EyeContext(
+                HeadValid: _head.Valid,
+                HeadYawRate: _head.YawRate,
+                HeadPitchRate: _head.PitchRate,
+                HeadMoving: _head.Moving,
+                MotionOnset: _head.MotionOnset,
+                Speaking: isSpeech,
+                Hesitation: events.Hesitation,
+                SocialGaze: _config.SocialGazeEnabled,
+                VorGain: _config.VorGain,
+                VorRecenterSeconds: _config.VorRecenterSeconds,
+                LidClosure: _doze.LidClosure,
+                Asleep: _doze.Asleep);
+            eyes = _eyes.Update(dt, arousal, _config.BlinkRatePerMinute * _doze.BlinkRateScale, context);
         }
 
         _mixer.Compose(
@@ -254,9 +311,23 @@ public sealed class SyntheticFaceModule : IFaceTrackingModule, IFaceModuleStatus
             idleActive,
             eyes);
 
+        if (driveEmotion)
+        {
+            _asymmetry?.Apply(frame, dt, _config.AsymmetryIntensity);
+        }
+
         FaceFrameValidator.Sanitize(frame);
 
         LogDiagnostics(dt, audio, activity, isSpeech, prosody, eyes, frame);
+    }
+
+    private float DozePitchRadians() => _config.DozePitchDegrees * MathF.PI / 180f;
+
+    private static void AddBreath(float[] idle, float breath)
+    {
+        idle[(int)FaceExpression.BrowInnerUpRight] = MathF.Max(idle[(int)FaceExpression.BrowInnerUpRight], breath);
+        idle[(int)FaceExpression.BrowInnerUpLeft] = MathF.Max(idle[(int)FaceExpression.BrowInnerUpLeft], breath);
+        idle[(int)FaceExpression.JawOpen] = MathF.Max(idle[(int)FaceExpression.JawOpen], breath);
     }
 
     public ValueTask TeardownAsync(CancellationToken cancellationToken)
