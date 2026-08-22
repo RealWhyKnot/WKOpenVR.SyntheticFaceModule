@@ -10,6 +10,7 @@ The `release.yml` body for each tag is composed mechanically from the commit sli
 - **module:** Fire brow, eye and smile episodes from vocal tone (d273ce0)
 - **module:** Expose every expression channel in the settings descriptor (fb3156d)
 - **module:** Share one episode envelope across expression channels (4b7cd59)
+- **module:** Retune eyes and idle to tracked sessions and guard the output stream (70fd29b)
 
 ### Changed
 - **module:** Drive the per-frame pipeline through a testable step (85e93b5)
