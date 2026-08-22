@@ -67,6 +67,17 @@ if (Test-Path -LiteralPath $workflowDir) {
             $parseErrors = $null
             [void][System.Management.Automation.Language.Parser]::ParseInput($stubbed, [ref]$null, [ref]$parseErrors)
             Add-ParserErrors -Source "$wfPath step '$stepName' (run: starting at line $runStartLn)" -ParseErrors $parseErrors
+
+            # A step that carries on after a native command fails must clear $LASTEXITCODE before
+            # it ends: the runner exits the step with whatever value is left behind, so an expected
+            # "nothing found" becomes a failed release. This is how the first stable release of a
+            # repo broke -- git describe found no earlier stable tag and left 128 behind.
+            $suppresses = $body -match '2>\$null'
+            $tolerates = $body -match '\$LASTEXITCODE\s+-eq\s+0'
+            $resets = $body -match '\$global:LASTEXITCODE\s*=\s*0'
+            if ($suppresses -and $tolerates -and -not $resets) {
+                $errors.Add("$wfPath step '$stepName' (run: starting at line $runStartLn): tolerates a native command failure without resetting `$LASTEXITCODE; the step will exit with the stale code.") | Out-Null
+            }
         }
 
         for ($i = 0; $i -lt $lines.Count; $i++) {
