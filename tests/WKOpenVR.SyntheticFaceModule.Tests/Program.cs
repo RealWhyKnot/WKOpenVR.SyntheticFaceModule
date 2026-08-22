@@ -541,6 +541,9 @@ static ScriptedAudio LaughterScript() =>
 static ScriptedAudio RhythmicSpeechScript() =>
     new ScriptedAudio().Speech(2f).Pulses(1.2f, 5f).Silence(1.5f);
 
+static ScriptedAudio UnvoicedLaughterScript() =>
+    new ScriptedAudio().Speech(2f).UnvoicedPulses(1.2f, 5f, rms: 0.3f).Silence(1.5f);
+
 static void DetectorFlagsOnlyTheScriptedEvent()
 {
     AssertEvents("question", RunDetector(QuestionScript(), 0f), question: 1);
@@ -552,6 +555,8 @@ static void DetectorFlagsOnlyTheScriptedEvent()
     // flash entering a laugh, which is what a face does anyway.
     AssertEvents("laughter", RunDetector(LaughterScript(), 0f), emphasis: 1, laughter: 1);
     AssertEvents("rhythmic speech", RunDetector(RhythmicSpeechScript(), 0f));
+    // Roughly half of real laughter is unvoiced; a pitch-only lift test cannot see any of it.
+    AssertEvents("unvoiced laughter", RunDetector(UnvoicedLaughterScript(), 0f), emphasis: 1, laughter: -1);
 }
 
 static void QuestionRaisesInnerBrow()
@@ -1534,6 +1539,11 @@ sealed class ScriptedAudio
 
     public ScriptedAudio Pulses(float seconds, float hz, float rms = 0.1f, float pitch = 150f)
         => Add(seconds, t => (t * hz) % 1f < 0.5f ? Voice(rms, pitch, flux: 0.1f) : Quiet(rms * 0.2f));
+
+    // Breathy laughter: the same rhythm and loudness lift with no periodicity at all, so every
+    // frame reports Voiced = false and carries no pitch.
+    public ScriptedAudio UnvoicedPulses(float seconds, float hz, float rms)
+        => Add(seconds, t => (t * hz) % 1f < 0.5f ? Quiet(rms) : Quiet(rms * 0.2f));
 
     public ScriptedAudio Silence(float seconds) => Add(seconds, _ => Quiet(1e-4f));
 

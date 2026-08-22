@@ -56,6 +56,11 @@ public sealed class ProsodyEventDetector
     private const float LaughPitchMinZ = 0.8f;
     private const float LaughLoudMinZ = 0.5f;
 
+    // Around half of natural laughter is breathy or unvoiced, and zPitch is reported as 0 on
+    // unvoiced frames, so a pitch-only lift test can never fire on those bouts. They still carry a
+    // loudness lift, so a louder one stands in for the pitch evidence.
+    private const float LaughUnvoicedLoudMinZ = 1.3f;
+
     private readonly record struct Sample(double T, bool Voiced, float LogPitch, float OnsetZ);
 
     private readonly record struct LaughOnset(double T, float ZPitch, float ZLoud);
@@ -109,8 +114,10 @@ public sealed class ProsodyEventDetector
 
         if (!isSpeech)
         {
+            // Laugh onsets deliberately survive a VAD dropout: breathy calls dip below the speech
+            // gate mid-bout, and clearing here threw away the rhythm evidence every time. The 1.5 s
+            // prune and the 0.4 s interval ceiling already reject anything genuinely stale.
             _samples.Clear();
-            _laughOnsets.Clear();
             _salience1 = 0f;
             _salience2 = 0f;
             _prevRms = frame.Rms;
@@ -350,7 +357,9 @@ public sealed class ProsodyEventDetector
             sumLoud += onset.ZLoud;
         }
 
-        return peakPitch >= LaughPitchMinZ && sumLoud / _laughOnsets.Count >= LaughLoudMinZ;
+        float meanLoud = sumLoud / _laughOnsets.Count;
+        return meanLoud >= LaughLoudMinZ
+            && (peakPitch >= LaughPitchMinZ || meanLoud >= LaughUnvoicedLoudMinZ);
     }
 
     private static float Clamp(float z) => Math.Clamp(z, -ZClamp, ZClamp);
