@@ -10,7 +10,7 @@ namespace WKOpenVR.SyntheticFaceModule.Coloring;
 // while arousal is recoverable, so a valence-tracking smile just follows vocal timbre: brighter
 // sibilants read as happy, loud speech reads as sad. Instead the corners run as discrete episodes
 // whose rate scales with speech and arousal, shaped to the timings measured from hardware
-// recordings (0.7 episodes/min, ~0.55 s onset, ~5.3 s duration, ~2.3 s offset, peaks near 1.0).
+// recordings (0.7 episodes/min; onset 0.65 s, duration 4.3 s, offset 1.7 s, pooled from 15 recordings).
 //
 // The layer never writes viseme-critical shapes: jaw, MouthClosed, funnel, pucker, stretch, and the
 // upper/lower lip openers stay owned by the audio mouth solver.
@@ -21,12 +21,6 @@ public sealed class EmotionColoringLayer
     private const float DecaySeconds = 1.5f;
 
     private const float EpisodesPerMinute = 0.7f;
-    private const float OnsetSeconds = 0.55f;
-    private const float OffsetSeconds = 2.3f;
-    private const float DurationMinSeconds = 3.0f;
-    private const float DurationMaxSeconds = 8.0f;
-    private const float PeakMin = 0.50f;
-    private const float PeakMax = 1.00f;
 
     private const float DimpleRatio = 0.37f;
     private const float CheekSmileRatio = 0.55f;
@@ -43,11 +37,9 @@ public sealed class EmotionColoringLayer
     private readonly Random _rng;
     private readonly float[] _smoothed = new float[FaceExpressionCount.Value];
     private readonly float[] _target = new float[FaceExpressionCount.Value];
+    private readonly Episode _smile = new(onsetSeconds: 0.651f, durationSeconds: 4.337f, offsetSeconds: 1.723f);
 
     private float _secondsToNextEpisode = -1f;
-    private float _secondsIntoEpisode = -1f;
-    private float _episodeDuration;
-    private float _episodePeak;
 
     public EmotionColoringLayer(Random rng)
     {
@@ -103,26 +95,16 @@ public sealed class EmotionColoringLayer
     {
         Array.Clear(_smoothed);
         Array.Clear(_target);
+        _smile.Reset();
         _secondsToNextEpisode = -1f;
-        _secondsIntoEpisode = -1f;
-        _episodeDuration = 0f;
-        _episodePeak = 0f;
         LastSmileEnvelope = 0f;
     }
 
     private float UpdateSmileEpisode(ProsodyState prosody, float dtSeconds)
     {
-        if (_secondsIntoEpisode >= 0f)
+        if (_smile.Active)
         {
-            _secondsIntoEpisode += dtSeconds;
-            if (_secondsIntoEpisode >= _episodeDuration)
-            {
-                _secondsIntoEpisode = -1f;
-                ScheduleNextEpisode();
-                return 0f;
-            }
-
-            return Envelope(_secondsIntoEpisode, _episodeDuration) * _episodePeak;
+            return _smile.Advance(dtSeconds);
         }
 
         if (_secondsToNextEpisode < 0f)
@@ -143,10 +125,9 @@ public sealed class EmotionColoringLayer
             return 0f;
         }
 
-        _secondsIntoEpisode = 0f;
-        _episodeDuration = Lerp(DurationMinSeconds, DurationMaxSeconds, (float)_rng.NextDouble());
-        _episodePeak = Lerp(PeakMin, PeakMax, (float)_rng.NextDouble());
-        return 0f;
+        ScheduleNextEpisode();
+        _smile.Trigger();
+        return _smile.Advance(dtSeconds);
     }
 
     private void ScheduleNextEpisode()
@@ -154,23 +135,6 @@ public sealed class EmotionColoringLayer
         float meanGapSeconds = 60f / EpisodesPerMinute;
         double u = Math.Max(1e-6, _rng.NextDouble());
         _secondsToNextEpisode = (float)(-Math.Log(u) * meanGapSeconds);
-    }
-
-    private static float Envelope(float t, float duration)
-    {
-        float offsetStart = Math.Max(OnsetSeconds, duration - OffsetSeconds);
-        if (t < OnsetSeconds)
-        {
-            return SmoothStep01(t / OnsetSeconds);
-        }
-
-        if (t < offsetStart)
-        {
-            return 1f;
-        }
-
-        float fall = (t - offsetStart) / Math.Max(0.001f, duration - offsetStart);
-        return 1f - SmoothStep01(fall);
     }
 
     private void Smooth(
@@ -193,16 +157,8 @@ public sealed class EmotionColoringLayer
         _target[(int)shape] = Math.Clamp(value, 0f, 1f);
     }
 
-    private static float Lerp(float a, float b, float t) => a + ((b - a) * t);
-
     private static float Coefficient(float dtSeconds, float tauSeconds)
     {
         return dtSeconds <= 0f || tauSeconds <= 0f ? 1f : 1f - MathF.Exp(-dtSeconds / tauSeconds);
-    }
-
-    private static float SmoothStep01(float x)
-    {
-        float t = Math.Clamp(x, 0f, 1f);
-        return t * t * (3f - (2f * t));
     }
 }
