@@ -8,6 +8,7 @@ The `release.yml` body for each tag is composed mechanically from the commit sli
 
 ### Added
 - **eyes:** Couple gaze to head motion and add a head-down doze state (3167b81)
+- **eyes:** Doze on a motionless head instead of a lowered one (9a346d5)
 
 ### Fixed
 - **face:** Stop over-blinking, rest the mouth, and make laughter reachable (f78ced5)
