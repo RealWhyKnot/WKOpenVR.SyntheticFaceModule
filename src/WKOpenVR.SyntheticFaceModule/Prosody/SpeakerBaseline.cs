@@ -8,13 +8,17 @@ namespace WKOpenVR.SyntheticFaceModule.Prosody;
 public sealed class RunningBaseline
 {
     private readonly float _tauSeconds;
+    private readonly float _initialVariance;
     private double _mean;
     private double _variance;
     private bool _initialized;
 
-    public RunningBaseline(float tauSeconds = 20f)
+    // The prior variance stands in until the window fills; on a feature with known spread pass
+    // its square so the first seconds of z-scores are not inflated by a near-zero seed.
+    public RunningBaseline(float tauSeconds = 20f, float initialVariance = 1e-4f)
     {
         _tauSeconds = tauSeconds;
+        _initialVariance = initialVariance;
     }
 
     public float Mean => (float)_mean;
@@ -25,7 +29,7 @@ public sealed class RunningBaseline
         if (!_initialized)
         {
             _mean = value;
-            _variance = 1e-4;
+            _variance = _initialVariance;
             _initialized = true;
             return 0f;
         }

@@ -23,8 +23,8 @@
   // Set to 1 to let smile episodes play while you talk.
   "SmileIntensity": 0.0,
 
-  // Scales the mouth output amount. 1 is nominal.
-  "MouthIntensity": 1.0,
+  // Scales the mouth output amount. 0.6 matches tracked jaw travel; 1 is the raw solver level.
+  "MouthIntensity": 0.6,
 
   // Scales the always-on idle micro-motion (small brow/squint events while quiet).
   // 0 disables it; 1 matches rates and amplitudes measured from real tracker recordings.

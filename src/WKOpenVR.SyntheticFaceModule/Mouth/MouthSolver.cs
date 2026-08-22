@@ -1,6 +1,7 @@
 using WKOpenVR.FaceTracking.Sdk;
 using WKOpenVR.SyntheticFaceModule.Audio;
 using WKOpenVR.SyntheticFaceModule.Dsp;
+using WKOpenVR.SyntheticFaceModule.Prosody;
 
 namespace WKOpenVR.SyntheticFaceModule.Mouth;
 
@@ -26,9 +27,13 @@ public sealed class MouthSolver
     private const float ClosureContextMin = 0.35f;
     private const float ClosureDipMin = 0.35f;
 
+    // Prior spread of the 0..1 centroid scale (~380 Hz) until the speaker's own window fills.
+    private const float CentroidPriorVariance = 0.01f;
+
     private readonly AsymmetricSmoother _jaw = new(attackSeconds: 0.02f, releaseSeconds: 0.09f);
     private readonly AsymmetricSmoother _mouthClosed = new(attackSeconds: 0.025f, releaseSeconds: 0.12f);
     private readonly BroadVisemeClassifier _classifier = new();
+    private readonly RunningBaseline _centroid = new(20f, CentroidPriorVariance);
 
     private float _open;
     private float _front;
@@ -66,7 +71,14 @@ public sealed class MouthSolver
         activity = Math.Clamp(activity, 0f, 1f);
         float jaw = _jaw.Update(activity, dtSeconds);
 
-        VisemeWeights groups = _classifier.Classify(frame, activity);
+        float centroidZ = 0f;
+        if (frame.Voiced && activity > 0f)
+        {
+            float norm = BroadVisemeClassifier.CentroidNorm(frame.SpectralCentroidHz);
+            centroidZ = Math.Clamp(_centroid.Update(norm, dtSeconds), -4f, 4f);
+        }
+
+        VisemeWeights groups = _classifier.Classify(frame, activity, centroidZ);
         float k = Coefficient(dtSeconds, GroupSmoothingSeconds);
         _open += (groups.Open - _open) * k;
         _front += (groups.Front - _front) * k;
@@ -92,10 +104,9 @@ public sealed class MouthSolver
         float funnel = jaw * rounding * 0.60f;
         float pucker = jaw * rounding * 0.45f;
         float stretch = jaw * spreading * 0.55f;
-        // Lip-opener ratios measured from hardware recordings over speaking frames:
-        // upper lip rises at ~0.65x jaw and the lower lip drops at ~0.52x.
-        float upperUp = jawOpen * 0.65f;
-        float lowerDown = jawOpen * 0.52f;
+        // Lip-opener ratios over speaking frames, pooled from 15 tracker recordings.
+        float upperUp = jawOpen * 0.82f;
+        float lowerDown = jawOpen * 0.83f;
 
         Set(expressions, FaceExpression.JawOpen, jawOpen, intensity);
         Set(expressions, FaceExpression.MouthClosed, mouthClosed, intensity);
@@ -130,6 +141,7 @@ public sealed class MouthSolver
     {
         _jaw.Reset();
         _mouthClosed.Reset();
+        _centroid.Reset();
         _open = 0f;
         _front = 0f;
         _rounded = 0f;

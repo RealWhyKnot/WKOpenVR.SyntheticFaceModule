@@ -17,7 +17,11 @@ public readonly record struct VisemeWeights(float Silence, float Open, float Fro
 /// </summary>
 public sealed class BroadVisemeClassifier
 {
-    public VisemeWeights Classify(AudioAnalysisFrame frame, float activity)
+    // Lip posture is judged on `centroidZ`, the centroid's z-score against the speaker's own running
+    // baseline: absolute thresholds read every low-voiced vowel as rounded, while tracked speech
+    // holds rounding in ~1% of speaking frames and spreading in ~13%. The ramps below are the
+    // Gaussian quantiles for those duty cycles.
+    public VisemeWeights Classify(AudioAnalysisFrame frame, float activity, float centroidZ)
     {
         activity = Math.Clamp(activity, 0f, 1f);
         if (activity <= 0.001f)
@@ -25,14 +29,14 @@ public sealed class BroadVisemeClassifier
             return VisemeWeights.SilenceOnly;
         }
 
-        float centroidNorm = Math.Clamp((frame.SpectralCentroidHz - 200f) / 3800f, 0f, 1f);
+        float centroidNorm = CentroidNorm(frame.SpectralCentroidHz);
         float zcrNorm = Math.Clamp(frame.ZeroCrossingRate / 0.35f, 0f, 1f);
         float voiced = frame.Voiced ? 1f : 0f;
         float unvoiced = 1f - voiced;
 
         float fricative = unvoiced * SmoothStep(0.45f, 0.85f, zcrNorm) * SmoothStep(0.45f, 0.85f, centroidNorm);
-        float front = voiced * SmoothStep(0.45f, 0.80f, centroidNorm);
-        float rounded = voiced * (1f - SmoothStep(0.15f, 0.50f, centroidNorm));
+        float front = voiced * SmoothStep(0.8f, 1.8f, centroidZ);
+        float rounded = voiced * SmoothStep(1.8f, 2.8f, -centroidZ);
         float open = voiced * Bell(centroidNorm, 0.32f, 0.18f);
 
         float sum = fricative + front + rounded + open;
@@ -55,6 +59,8 @@ public sealed class BroadVisemeClassifier
             Rounded: rounded * scale,
             Fricative: fricative * scale);
     }
+
+    public static float CentroidNorm(float centroidHz) => Math.Clamp((centroidHz - 200f) / 3800f, 0f, 1f);
 
     private static float SmoothStep(float edge0, float edge1, float x)
     {

@@ -31,6 +31,7 @@ var tests = new (string Name, Action Body)[]
     ("Closure stays quiet through an utterance", ClosureStaysQuietThroughUtterance),
     ("Mouth close does not fight open speech", MouthCloseDoesNotFightOpenSpeech),
     ("Mouth rounded vs front mapping", MouthRoundedVsFrontMapping),
+    ("Lip posture duty cycles match tracked speech", LipPostureDutyCyclesMatchTrackedSpeech),
     ("Emotion coloring respects caps and avoids mouth shapes", EmotionColoringCapsAndMouth),
     ("Emotion coloring suppressed at low confidence", EmotionColoringSuppressedLowConfidence),
     ("Valence never moves the mouth corners", ValenceNeverMovesCorners),
@@ -206,9 +207,9 @@ static void MouthLipOpenersFollowJaw()
 
     float jaw = expr[(int)FaceExpression.JawOpen];
     AssertTrue(jaw > 0.3f);
-    AssertEqual(jaw * 0.65f, expr[(int)FaceExpression.MouthUpperUpRight]);
+    AssertEqual(jaw * 0.82f, expr[(int)FaceExpression.MouthUpperUpRight]);
     AssertEqual(expr[(int)FaceExpression.MouthUpperUpRight], expr[(int)FaceExpression.MouthUpperDeepenRight]);
-    AssertEqual(jaw * 0.52f, expr[(int)FaceExpression.MouthLowerDownLeft]);
+    AssertEqual(jaw * 0.83f, expr[(int)FaceExpression.MouthLowerDownLeft]);
 }
 
 static void FricativeDampsJawWithoutLipPosture()
@@ -289,24 +290,83 @@ static void MouthCloseDoesNotFightOpenSpeech()
     AssertTrue(expr[(int)FaceExpression.MouthClosed] < 0.05f);
 }
 
+// Posture is judged against the speaker's own centroid baseline: a dip below it rounds the lips,
+// a rise above it spreads them, and the baseline centroid itself does neither.
 static void MouthRoundedVsFrontMapping()
 {
-    var roundedSolver = new MouthSolver();
-    var rounded = new float[FaceExpressionCount.Value];
-    var roundedFrame = MakeVoiceFrame(rms: 0.3f, centroid: 400f);
+    var neutral = MakeVoiceFrame(rms: 0.3f, centroid: 1200f);
 
-    var frontSolver = new MouthSolver();
-    var front = new float[FaceExpressionCount.Value];
-    var frontFrame = MakeVoiceFrame(rms: 0.3f, centroid: 3200f);
-
-    for (int i = 0; i < 40; i++)
+    float[] Run(AudioAnalysisFrame probe)
     {
-        roundedSolver.Solve(roundedFrame, 1f, 0.02f, 1f, rounded);
-        frontSolver.Solve(frontFrame, 1f, 0.02f, 1f, front);
+        var solver = new MouthSolver();
+        var expr = new float[FaceExpressionCount.Value];
+        for (int i = 0; i < 150; i++)
+        {
+            solver.Solve(neutral, 1f, 0.02f, 1f, expr);
+        }
+
+        AssertEqual(0f, expr[(int)FaceExpression.LipFunnelUpperRight]);
+        AssertEqual(0f, expr[(int)FaceExpression.MouthStretchRight]);
+        for (int i = 0; i < 40; i++)
+        {
+            solver.Solve(probe, 1f, 0.02f, 1f, expr);
+        }
+
+        return expr;
     }
 
-    AssertTrue(rounded[(int)FaceExpression.LipFunnelUpperRight] > front[(int)FaceExpression.LipFunnelUpperRight]);
-    AssertTrue(front[(int)FaceExpression.MouthStretchRight] > rounded[(int)FaceExpression.MouthStretchRight]);
+    float[] rounded = Run(MakeVoiceFrame(rms: 0.3f, centroid: 400f));
+    float[] front = Run(MakeVoiceFrame(rms: 0.3f, centroid: 2200f));
+
+    AssertTrue(rounded[(int)FaceExpression.LipFunnelUpperRight] > 0.1f);
+    AssertEqual(0f, rounded[(int)FaceExpression.MouthStretchRight]);
+    AssertTrue(front[(int)FaceExpression.MouthStretchRight] > 0.1f);
+    AssertEqual(0f, front[(int)FaceExpression.LipFunnelUpperRight]);
+}
+
+// Tracked speech holds a rounding posture in ~1% of speaking frames and a spread one in ~13%. A
+// Gaussian spread of centroids around the speaker's mean (AR(1), ~100 ms correlation) must land in
+// those bands instead of rounding every low vowel.
+static void LipPostureDutyCyclesMatchTrackedSpeech()
+{
+    var rng = new Random(1);
+    var solver = new MouthSolver();
+    var expr = new float[FaceExpressionCount.Value];
+    const int frames = 3000;
+    int rounding = 0;
+    int spreading = 0;
+    float deviation = 0f;
+
+    for (int i = 0; i < frames; i++)
+    {
+        double u1 = 1.0 - rng.NextDouble();
+        double u2 = rng.NextDouble();
+        float gaussian = (float)(Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2));
+        deviation = (0.8f * deviation) + (0.6f * 300f * gaussian);
+        float centroid = Math.Max(250f, 1200f + deviation);
+        solver.Solve(MakeVoiceFrame(rms: 0.3f, centroid: centroid), 1f, 0.02f, 1f, expr);
+
+        bool rounded = Math.Max(
+            expr[(int)FaceExpression.LipFunnelUpperRight],
+            expr[(int)FaceExpression.LipPuckerUpperRight]) > 0.10f;
+        bool spread = expr[(int)FaceExpression.MouthStretchRight] > 0.10f;
+        AssertTrue(!(rounded && spread));
+        if (rounded)
+        {
+            rounding++;
+        }
+
+        if (spread)
+        {
+            spreading++;
+        }
+    }
+
+    float roundingFraction = rounding / (float)frames;
+    float spreadingFraction = spreading / (float)frames;
+    Console.WriteLine($"  posture duty: rounding={roundingFraction:P1} spreading={spreadingFraction:P1}");
+    AssertTrue(roundingFraction < 0.03f);
+    AssertTrue(spreadingFraction > 0.05f && spreadingFraction < 0.25f);
 }
 
 // ---- Emotion coloring ----

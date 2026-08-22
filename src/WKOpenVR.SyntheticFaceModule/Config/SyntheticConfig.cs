@@ -33,7 +33,7 @@ public sealed class SyntheticConfig
     public float SmileIntensity { get; set; }
 
     /// <summary>Scales the mouth output. 1 = nominal.</summary>
-    public float MouthIntensity { get; set; } = 1.0f;
+    public float MouthIntensity { get; set; } = 0.6f;
 
     /// <summary>
     /// Scales the always-on idle micro-motion (small brow/squint events during quiet).

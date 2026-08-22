@@ -33,7 +33,7 @@ for an annotated copy. Unknown or missing fields fall back to the defaults below
 | `QualityMode` | `false` | Use a local ONNX speech-emotion model for a better arousal estimate (needs `EmotionModelPath`); CPU-only, opt-in. Falls back to the heuristic when no model is present. |
 | `EmotionIntensity` | `1.0` | Scales the emotion coloring (0 disables, 1 = full conservative caps). |
 | `SmileIntensity` | `0.0` | Scales the episodic smile on the mouth corners. Audio cannot detect smiling, so this is opt-in: 0 keeps the corners still, 1 = calibrated episode amplitudes. |
-| `MouthIntensity` | `1.0` | Scales the mouth output. |
+| `MouthIntensity` | `0.6` | Scales the mouth output. 0.6 matches tracked jaw travel; 1.0 is the raw solver level. |
 | `IdleIntensity` | `1.0` | Scales the always-on idle micro-motion (small brow/squint events while quiet; 0 disables). |
 | `MicDeviceNumber` | `-1` | Capture device index; `-1` = system default. |
 | `MicDeviceName` | `null` | Prefer the first capture device whose name contains this text (overrides the index when matched). |
