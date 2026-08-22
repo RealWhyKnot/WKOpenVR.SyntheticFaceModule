@@ -33,12 +33,12 @@ public sealed class BlinkScheduler
 
     public BlinkScheduler(
         Random rng,
-        float blinksPerMinute = 12f,
+        float blinksPerMinute = 15.9f,
         float closeSeconds = 0.06f,
         float holdSeconds = 0.02f,
         float openSeconds = 0.14f,
         float refractorySeconds = 1.5f,
-        float doubleBlinkProbability = 0.15f)
+        float doubleBlinkProbability = 0.16f)
     {
         _rng = rng;
         _meanIntervalSeconds = 60f / MathF.Max(1f, blinksPerMinute);

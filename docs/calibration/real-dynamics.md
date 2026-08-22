@@ -1,63 +1,73 @@
 # Real-hardware expression dynamics
 
-Tuning targets for the synthetic module, measured from Virtual Desktop (Quest) face
-tracking recordings. Numbers come from `WKOpenVR.FaceModuleHost.exe analyze-face-replay`
-run over six sessions; `real-dynamics.json` next to this file holds the full output.
-All values are pre-driver (recorded before eyelid sync, vergence, and shape tuning),
-which is the same point in the pipeline where module output is recorded, so synthetic
-targets compare apples to apples.
+Tuning targets for the synthetic module, measured from Virtual Desktop (Quest) face tracking
+recordings. Numbers come from `WKOpenVR.FaceModuleHost.exe analyze-face-replay` run over fifteen
+sessions; `real-dynamics.json` next to this file holds the full output. All values are pre-driver
+(recorded before eyelid sync, vergence, and shape tuning), which is the same point in the pipeline
+where module output is recorded, so synthetic targets compare apples to apples.
 
 ## Source recordings
 
-| file | date | frames | duration | notes |
-|---|---|---|---|---|
-| face_replay.20260729_202144_460.jsonl | 2026-07-29 | 680,239 | 8.8 h | long mixed session |
-| face_replay.20260731_142249_644.jsonl | 2026-07-31 | 259,752 | 3.4 h | expressive, high squint |
-| face_replay.20260801_175948_550.jsonl | 2026-08-01 | 330,622 | 4.3 h | mixed |
-| face_replay.20260802_033622_208.jsonl | 2026-08-02 | 366,874 | 4.8 h | very social, heavy smiling |
-| face_replay.20260803_235031_724.jsonl | 2026-08-03 | 260,005 | 3.4 h | quiet session |
-| face_replay.20260804_091007_174.jsonl | 2026-08-04 | 71,154 | 0.9 h | brow-heavy, little smiling |
+| file | frames | duration | rate |
+|---|---|---|---|
+| face_replay.20260815_181955_542.jsonl | 54,340 | 0.7 h | 21.5 Hz |
+| face_replay.20260816_013029_641.jsonl | 514,432 | 6.7 h | 21.4 Hz |
+| face_replay.20260816_183837_277.jsonl | 226,401 | 2.9 h | 21.4 Hz |
+| face_replay.20260817_032449_048.jsonl | 253,806 | 3.3 h | 21.5 Hz |
+| face_replay.20260818_042519_597.jsonl | 109,879 | 1.4 h | 21.5 Hz |
+| face_replay.20260819_044540_011.jsonl | 3,921 | 0.1 h | 21.5 Hz |
+| face_replay.20260819_045058_064.jsonl | 114,628 | 1.5 h | 21.5 Hz |
+| face_replay.20260819_195151_429.jsonl | 162,858 | 2.1 h | 21.5 Hz |
+| face_replay.20260820_004716_642.jsonl | 4,991 | 0.1 h | 21.5 Hz |
+| face_replay.20260820_005115_355.jsonl | 392,394 | 5.1 h | 21.5 Hz |
+| face_replay.20260821_005826_961.jsonl | 77,851 | 1.0 h | 21.4 Hz |
+| face_replay.20260821_101636_387.jsonl | 171,496 | 2.2 h | 21.4 Hz |
+| face_replay.20260821_220414_424.jsonl | 43,737 | 0.6 h | 21.1 Hz |
+| face_replay.20260821_231129_158.jsonl | 105,973 | 1.4 h | 21.5 Hz |
+| face_replay.20260822_004125_080.jsonl | 13,558 | 0.2 h | 21.5 Hz |
 
-All report `module='Virtual Desktop'` at ~21.4 Hz effective. Sessions vary a lot
-(smile strong-fraction spans 0.9%..21%), so pooled medians are the tuning anchor and
-single-session extremes set the plausible range.
+2,250,265 frames, 29.1 hours, one user and tracker, 2026-08-15 to 2026-08-22. Sessions vary a lot
+by mood, so pooled medians are the tuning anchor and single-session extremes set the plausible
+range.
 
 ## Headline targets (pooled medians)
 
 | metric | value | maps to |
 |---|---|---|
-| blink rate | 12.0/min (range 10.4..17.3) | `BlinkScheduler` blinks-per-minute |
-| blink closed time p50 | 93 ms | close+hold+open total (~33 ms frames; treat as coarse) |
-| double-blink fraction | 12% | `BlinkScheduler` double-blink probability (0.15 is fine) |
-| eyelid rest | mean 0.980, p50 1.000, p10 0.857..0.999 | rest openness ~1.0 with occasional droop; do NOT lower baseline |
-| gaze X p05..p95 | -0.334..0.233 (p50 ~-0.03) | near-symmetric cone, slight left lean |
-| gaze Y p05..p95 | -0.395..0.112 (p50 -0.126) | down-biased center + asymmetric cone |
-| saccades | ~110/min, amplitude p50 0.150 | `MicroSaccadeGaze` rate/reach |
-| fixation dwell | p25/50/75/90 = 93/187/374..605/745..1258 ms | dwell distribution; current 0.4..3.0 s is ~5x too slow |
+| blink rate | 15.9/min | `BlinkScheduler` blinks-per-minute |
+| blink closed time p50 | 94 ms | close+hold+open total (~47 ms frames; treat as coarse) |
+| double-blink fraction | 16% | `BlinkScheduler` double-blink probability |
+| eyelid rest | mean 0.970, p50 1.000 | rest openness ~1.0 with occasional droop; do NOT lower baseline |
+| gaze X p05..p95 | -0.346..0.238 | near-symmetric cone, slight left lean |
+| gaze Y p05..p95 | -0.413..0.168 (p50 -0.128) | down-biased center, 0.30 up / 0.29 down from it |
+| saccades | 102.4/min, amplitude p50 0.138 | `MicroSaccadeGaze` rate/reach |
+| fixation dwell | p50 233 ms, mean ~550 ms, p90 past 1 s | log-normal dwell, median 0.233 s, sigma 1.3 |
 | pupil | flat 0.5 (VD does not report pupil) | keep physiological defaults, nothing to match |
 
-## Smile and emotion channels
+## Expression episodes (threshold crossings above 0.30)
 
-| metric | value |
-|---|---|
-| smile mean while speaking / quiet | 0.380 / 0.030 (per-session speaking mean 0.064..0.835) |
-| smile strong-fraction while speaking / quiet | 31..85% / 1..13% |
-| smile episode rate | 0.7/min pooled (0.5..2.0 by mood) |
-| smile episode peak p95 | 1.00 (smiles saturate; cap ~1.0) |
-| smile onset p50 (start to 90% of peak) | ~610 ms |
-| smile offset p50 (90% of peak to end) | ~2.3 s, episode duration p50 ~5.3 s |
-| frown episodes | 0.2/min, peak p95 0.79, onset ~93 ms, duration ~280 ms (fast microexpressions) |
-| brow inner-up episodes | 0.2/min, peak p95 0.60, onset ~560 ms, duration ~2.3 s |
-| eye-wide episodes | 2.9/min, peak p95 0.94, onset ~140 ms, duration ~610 ms (fast flashes) |
-| eye-squint episodes | 1.3/min, peak p95 0.64, duration ~2.8 s (sustained, does the eyelid "character" work) |
+| shape | /min | peak p95 | duration p50 | onset p50 | offset p50 |
+|---|---|---|---|---|---|
+| MouthCornerPullLeft | 1.4 | 1.00 | 4337 ms | 651 ms | 1723 ms |
+| MouthFrownLeft | 0.2 | 0.67 | 376 ms | 92 ms | 185 ms |
+| BrowInnerUpLeft | 0.4 | 0.54 | 2143 ms | 561 ms | 933 ms |
+| BrowOuterUpLeft | 0.2 | 0.48 | 1862 ms | 513 ms | 607 ms |
+| MouthStretchLeft | 0.2 | 0.84 | 280 ms | 93 ms | 140 ms |
+| EyeWideLeft | 4.3 | 0.93 | 701 ms | 186 ms | 233 ms |
+| EyeSquintLeft | 2.2 | 0.69 | 2381 ms | 701 ms | 746 ms |
+| MouthPressLeft | 0.0 | 0.00 | absent; do not drive | | |
 
-Key correction to earlier assumptions: smiling co-occurs with speech, strongly and
-positively. Drive smile probability up around speech activity; the guard needed is
-only against additive saturation with viseme shapes, not a general speech damp.
+These rows are the episode timings the vocal-tone channels use: question = BrowInnerUp row (with
+outer brow at 0.48/0.54), emphasis = BrowOuterUp row, engagement = EyeWide row, laughter =
+MouthCornerPull row. Smile mean while speaking / quiet is 0.447 / 0.052: smiles co-occur with
+speech, strongly and positively.
+
+Companion ratios during smiles: `MouthDimple ~= 0.37 x MouthCornerPull`, `CheekSquint ~= 0.55 x`,
+`EyeSquint ~= 0.35 x` (Duchenne pairing).
 
 ## Shape pairings and ratios observed in Virtual Desktop output
 
-These pairs move identically, so synthetic output should mirror them for a matching look:
+These pairs move identically, so synthetic output mirrors them:
 
 - `MouthCornerSlant* = MouthCornerPull*` (ratio 1.0)
 - `MouthUpperDeepen* = MouthUpperUp*` (ratio 1.0)
@@ -67,28 +77,59 @@ Mutually exclusive: rounding (`LipFunnel*`, `LipPucker*`) never co-occurs with s
 (`MouthStretch*`). Over 77,851 sampled frames, funnel-and-stretch above 0.10 together: 0 frames;
 pucker-and-stretch: 0 frames. Funnel and pucker are NOT antagonists -- they co-occur in 81 frames,
 about half of all funnel-active frames, so treat them as one rounding posture. Duty cycles are low:
-funnel 0.22%, pucker 0.29%, stretch 3.28%, tightener 0.31% of frames above 0.10.
+funnel 0.22%, pucker 0.29%, stretch 3.28%, tightener 0.31% of all frames above 0.10. With speech in
+about a quarter of frames, that is ~1% of speaking frames rounded and ~13% spread; the posture
+classifier reproduces those fractions from the speaker's own centroid z-score (rounded below
+z -2.3, spread above z +1.1).
 
-Companion ratios during smiles: `MouthDimple ~= 0.37 x MouthCornerPull`,
-`CheekSquint` rises with smile (Duchenne pairing; per-session mean up to 0.15,
-p95 up to 0.96 -- far above any small coloring cap).
+Jaw-linked ratios over speaking frames (jaw > 0.2): `MouthLowerDown/JawOpen = 0.83` pooled,
+`MouthUpperUp/JawOpen = 0.82`.
 
-Jaw-linked ratios over speaking frames (jaw > 0.2):
-`MouthLowerDown/JawOpen = 0.52` pooled (0.23..1.31), `MouthUpperUp/JawOpen = 0.65`
-(0.51..1.07).
-
-## Idle behavior (jaw quiet >= 1 s; 81..94% of session time)
+## Idle behavior (jaw quiet >= 1 s)
 
 | shape | events/min | amplitude p90 |
 |---|---|---|
-| BrowInnerUpLeft | 12.1 | 0.044 |
-| BrowOuterUpLeft | 7.8 | 0.024 |
-| EyeSquintLeft | 19.2 | 0.058 |
-| MouthCornerPullLeft | 2.8 | 0.019 |
-| MouthPressLeft | ~0 | 0.000 |
+| BrowInnerUpLeft | 16.3 | 0.083 |
+| BrowOuterUpLeft | 12.5 | 0.066 |
+| EyeSquintLeft | 29.4 | 0.106 |
+| MouthCornerPullLeft | 5.0 | 0.093 |
+| MouthPressLeft | 0.0 | 0.000 |
 
-Idle micro-motion is constant, small, and brow/squint-led. MouthPress is essentially
-absent in this tracker; do not schedule it.
+Idle micro-motion is constant, small, and brow/squint-led. MouthPress is essentially absent in
+this tracker; do not schedule it.
+
+## Per-frame slew (face_replay.20260822_004125_080.jsonl, 13,557 frame pairs)
+
+`|dv| / dt` per second, p99 / p99.9 / max. A 21 Hz tracker under-samples fast motion, so these are
+ceilings the 120 Hz synthetic stream must stay inside; a violation is a discontinuity, not a fast
+expression.
+
+| family | p99/s | p99.9/s | max/s |
+|---|---|---|---|
+| MouthUpperUp, MouthLowerDown | 2.5 | 9.3 | 13.8 |
+| LipFunnel, LipPucker | 2.3 | 6.6 | 10.7 |
+| MouthCornerPull/Slant, CheekSquint, Dimple | 2.8 | 6.3 | 9.6 |
+| EyeSquint, EyeWide | 3.2 | 9.1 | 14.8 |
+| JawOpen | 1.7 | 3.5 | 4.9 |
+| MouthClosed, MouthStretch | 0.5 | 1.2 | 2.5 |
+| Brow* | 1.0 | 2.1 | 3.7 |
+| eye openness (blinks) | 13.4 | -- | 21.6 |
+| gaze xy | 5.5 | -- | 10.6 |
+
+The jaw smoother deliberately moves faster than the tracked jaw (lip-sync latency); tracked jaw
+slew would need ~160 ms of lag to reproduce, so mouth shapes are judged against the solver's own
+attack instead.
+
+## Synthetic 0.4.0 before this calibration (face_replay.20260822_003347_286.jsonl, 7.6 min)
+
+| metric | synthetic 0.4.0 | tracked | ratio |
+|---|---|---|---|
+| JawOpen max / active | 0.850 / 42.7% | 0.483 / 24.4% | 1.75x |
+| LipFunnel active | 23.4% | 0.22% | 100x |
+| LipPucker active | 21.6% | 0.29% | 75x |
+| MouthStretch active | 0.2% | 3.28% | 0.06x |
+| upperUp/jaw, lowerDown/jaw | 0.65 / 0.52 | 0.82 / 0.83 | |
+| brow/eye/smile episodes | none | 0.2-4.3/min | |
 
 ## Channels not to chase
 
@@ -106,9 +147,10 @@ Compare a synthetic session against a reference from the table above using
 | channel | metric | band |
 |---|---|---|
 | JawOpen | activeFraction / mean | reference +-0.05 / +-0.03 |
-| MouthCornerPullL/R | strong-fraction / episode peak p95 | 3..20% / 0.6..1.0 |
-| BrowInnerUpL/R | activeFraction | 0.06..0.20 |
-| EyeWideL/R | strong-fraction | <= 0.07 |
+| LipFunnel + LipPucker | activeFraction | < 1% |
+| MouthStretch | activeFraction | 1..5% |
+| MouthCornerPullL/R | episode rate / peak p95 | 0.5..3/min / 0.6..1.0 |
+| BrowInnerUpL/R, EyeWideL/R | episode rate | 0.2..5/min |
 | MouthClosed | p95 | <= 0.10 |
 | eye openness | rest mean / blinks per min | >= 0.95 / 8..18 |
 | gaze | Y p50 / Y p05 | -0.25..-0.05 / -0.50..-0.30 |

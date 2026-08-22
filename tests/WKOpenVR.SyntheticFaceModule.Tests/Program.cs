@@ -45,6 +45,8 @@ var tests = new (string Name, Action Body)[]
     ("Hesitation furrows brow", HesitationFurrowsBrow),
     ("Laughter smiles with Duchenne ratios", LaughterSmilesWithDuchenneRatios),
     ("Disabled channel stays still", DisabledChannelStaysStill),
+    ("Mixed script respects invariants", MixedScriptRespectsInvariants),
+    ("Golden frames match", GoldenFramesMatch),
     ("Mixer composes mouth and emotion", MixerComposesMouthAndEmotion),
     ("Mixer coloring does not saturate", MixerColoringDoesNotSaturate),
     ("Mixer idle alone sets expressions", MixerIdleAloneSetsExpressions),
@@ -69,6 +71,16 @@ var tests = new (string Name, Action Body)[]
     ("Package dependencies are allowed", PackageDependenciesAreAllowed),
     ("Settings descriptor matches config defaults", SettingsDescriptorMatchesConfigDefaults),
 };
+
+if (args.Contains("--print-golden"))
+{
+    foreach (string line in GoldenLines(RunScript(NewModule(), MixedScript())))
+    {
+        Console.WriteLine("    \"" + line + "\",");
+    }
+
+    return;
+}
 
 foreach (var test in tests)
 {
@@ -686,6 +698,167 @@ static int RisingEdges(List<StepRecord> records, FaceExpression shape, float lev
     return edges;
 }
 
+// ---- Output stream guards ----
+
+static ScriptedAudio MixedScript()
+{
+    var script = new ScriptedAudio();
+    for (int cycle = 0; cycle < 2; cycle++)
+    {
+        script
+            .Speech(2f).Rise(0.3f, 150f, 220f).Silence(1.5f)
+            .Speech(2f).Silence(1.5f)
+            .Speech(1f).Speech(0.1f, rms: 0.3f).Speech(0.9f).Silence(0.5f)
+            .Speech(1.5f).Speech(1.5f, pitch: 220f).Silence(0.5f)
+            .Speech(2f).Monotone(1.2f).Silence(1f)
+            .Speech(2f).Pulses(1.2f, 5f).Silence(1.5f);
+    }
+
+    return script.Silence(16f);
+}
+
+// Largest change one 120 Hz step may make. Expression families use the tracked p99.9 slew; mouth
+// shapes use the solver's own attack, and gaze a no-teleport bound (a 21 Hz tracker cannot time a
+// 30 ms saccade).
+static float StepCap(FaceExpression shape)
+{
+    string name = shape.ToString();
+    if (name.StartsWith("Jaw") || name.StartsWith("Lip") || name.StartsWith("MouthUpper")
+        || name.StartsWith("MouthLower") || name.StartsWith("MouthClosed") || name.StartsWith("MouthStretch"))
+    {
+        return 0.25f;
+    }
+
+    if (name.StartsWith("EyeSquint") || name.StartsWith("EyeWide"))
+    {
+        return 0.08f;
+    }
+
+    if (name.StartsWith("MouthCorner") || name.StartsWith("CheekSquint") || name.StartsWith("MouthDimple"))
+    {
+        return 0.06f;
+    }
+
+    return 0.02f;
+}
+
+static void MixedScriptRespectsInvariants()
+{
+    List<StepRecord> run = RunScript(NewModule(), MixedScript());
+    AssertTrue(run.Count > 60 * 120);
+
+    var railSteps = new int[FaceExpressionCount.Value];
+    for (int k = 0; k < run.Count; k++)
+    {
+        StepRecord now = run[k];
+        AssertTrue(float.IsFinite(now.Openness) && now.Openness >= 0f && now.Openness <= 1f);
+        AssertTrue(float.IsFinite(now.GazeX) && MathF.Abs(now.GazeX) <= 1f);
+        AssertTrue(float.IsFinite(now.GazeY) && MathF.Abs(now.GazeY) <= 1f);
+
+        float rounding = Math.Max(now.Expressions[(int)FaceExpression.LipFunnelUpperRight], now.Expressions[(int)FaceExpression.LipPuckerUpperRight]);
+        AssertTrue(rounding <= 0.10f || now.Expressions[(int)FaceExpression.MouthStretchRight] <= 0.10f);
+
+        for (int i = 0; i < now.Expressions.Length; i++)
+        {
+            float v = now.Expressions[i];
+            AssertTrue(float.IsFinite(v) && v >= 0f && v <= 1f);
+            railSteps[i] = v > 0.95f ? railSteps[i] + 1 : 0;
+            if (railSteps[i] > 6 * 120)
+            {
+                throw new InvalidOperationException($"{(FaceExpression)i} pinned above 0.95 for over 6 s at step {k}");
+            }
+
+            if (k == 0)
+            {
+                continue;
+            }
+
+            float delta = MathF.Abs(v - run[k - 1].Expressions[i]);
+            if (delta > StepCap((FaceExpression)i))
+            {
+                throw new InvalidOperationException($"{(FaceExpression)i} jumped {delta:F3} in one step at {k / 120f:F2}s");
+            }
+        }
+
+        if (k > 0)
+        {
+            AssertTrue(MathF.Abs(now.Openness - run[k - 1].Openness) <= 0.18f);
+            float gazeStep = MathF.Sqrt(
+                ((now.GazeX - run[k - 1].GazeX) * (now.GazeX - run[k - 1].GazeX)) +
+                ((now.GazeY - run[k - 1].GazeY) * (now.GazeY - run[k - 1].GazeY)));
+            AssertTrue(gazeStep <= 0.2f);
+        }
+    }
+
+    // The closing 4 s of silence must carry nothing above idle amplitude.
+    float tail = run.Count / 120f;
+    for (int i = 0; i < FaceExpressionCount.Value; i++)
+    {
+        float max = MaxOver(run, (FaceExpression)i, tail - 4f, tail + 1f);
+        if (max >= IdleCeiling)
+        {
+            throw new InvalidOperationException($"{(FaceExpression)i} reached {max:F3} during the closing silence");
+        }
+    }
+}
+
+// Top-8 shapes at ten sampled steps of the mixed script under the fixed test seed. Regenerate with
+// `dotnet run --project tests/WKOpenVR.SyntheticFaceModule.Tests -- --print-golden` after an
+// intended change to the parameter stream.
+static string[] Golden() =>
+[
+    "22:0.191,50:0.159,51:0.159,44:0.157,45:0.157,46:0.157,47:0.157,10:0.047",
+    "22:0.599,50:0.497,51:0.497,44:0.491,45:0.491,46:0.491,47:0.491,10:0.135",
+    "0:0.077,1:0.077,22:0.047,50:0.039,51:0.039,44:0.038,45:0.038,46:0.038",
+    "22:0.075,50:0.063,51:0.063,44:0.062,45:0.062,46:0.062,47:0.062,8:0.030",
+    "8:0.390,9:0.390,10:0.351,11:0.351,22:0.000,50:0.000,51:0.000,44:0.000",
+    "22:0.600,50:0.498,51:0.498,44:0.492,45:0.492,46:0.492,47:0.492,29:0.000",
+    "2:0.422,3:0.422,0:0.037,1:0.037,22:0.001,50:0.001,51:0.001,44:0.000",
+    "22:0.600,50:0.498,51:0.498,44:0.492,45:0.492,46:0.492,47:0.492,8:0.059",
+    "56:1.000,57:1.000,58:1.000,59:1.000,16:0.550,17:0.550,64:0.370,65:0.370",
+    "0:0.092,1:0.092,8:0.043,9:0.043,22:0.000,50:0.000,51:0.000,44:0.000",
+];
+
+static string[] GoldenLines(List<StepRecord> run)
+{
+    var lines = new List<string>();
+    for (int step = 600; step <= 6000; step += 600)
+    {
+        float[] e = run[step].Expressions;
+        IEnumerable<string> top = Enumerable.Range(0, e.Length)
+            .OrderByDescending(i => e[i])
+            .ThenBy(i => i)
+            .Take(8)
+            .Select(i => $"{i}:{e[i].ToString("F3", CultureInfo.InvariantCulture)}");
+        lines.Add(string.Join(",", top));
+    }
+
+    return [.. lines];
+}
+
+static void GoldenFramesMatch()
+{
+    string[] golden = Golden();
+    string[] actual = GoldenLines(RunScript(NewModule(), MixedScript()));
+    AssertCount(golden.Length, actual.Length, "golden lines");
+    for (int n = 0; n < actual.Length; n++)
+    {
+        string[] want = golden[n].Split(',');
+        string[] got = actual[n].Split(',');
+        for (int j = 0; j < want.Length; j++)
+        {
+            string[] w = want[j].Split(':');
+            string[] g = got[j].Split(':');
+            float wv = float.Parse(w[1], CultureInfo.InvariantCulture);
+            float gv = float.Parse(g[1], CultureInfo.InvariantCulture);
+            if (w[0] != g[0] || MathF.Abs(wv - gv) > 0.002f)
+            {
+                throw new InvalidOperationException($"golden line {n} entry {j}: expected {want[j]} got {got[j]}");
+            }
+        }
+    }
+}
+
 // ---- Mixer ----
 
 static void MixerComposesMouthAndEmotion()
@@ -755,10 +928,10 @@ static void IdleLayerProducesCalibratedActivity()
         AssertEqual(0f, offsets[(int)FaceExpression.LipFunnelUpperRight]);
     }
 
-    // Two simulated minutes at ~12 events/min; allow wide slack for the random draw.
-    AssertTrue(browEvents is > 10 and < 45);
-    AssertTrue(browMax <= 0.06f);
-    AssertTrue(cornerMax <= 0.05f);
+    // Two simulated minutes at ~16 events/min; allow wide slack for the random draw.
+    AssertTrue(browEvents is > 15 and < 60);
+    AssertTrue(browMax <= 0.083f);
+    AssertTrue(cornerMax <= 0.093f);
 
     // Symmetry: both sides always carry the same value.
     AssertEqual(
@@ -889,9 +1062,9 @@ static void SaccadesArePacedFast()
         }
     }
 
-    // 60 simulated seconds; short exponential dwells put the rate near real
-    // recordings (roughly 90-170 per minute), far above the old leisurely pace.
-    AssertTrue(saccades is > 70 and < 220);
+    // 60 simulated seconds; log-normal dwells (median 233 ms, long tail) put the rate near the
+    // tracked 102 per minute.
+    AssertTrue(saccades is > 80 and < 160);
 }
 
 static void ProceduralEyesBounded()

@@ -29,12 +29,11 @@ public sealed class EmotionColoringLayer
         (FaceExpression.BrowOuterUpLeft, 1f),
     ]);
 
+    // Eyes only: the 186 ms onset would move a brow faster than any tracked brow episode.
     private readonly Channel _engagement = new(new Episode(0.186f, 0.701f, 0.233f), 0.93f,
     [
         (FaceExpression.EyeWideRight, 1f),
         (FaceExpression.EyeWideLeft, 1f),
-        (FaceExpression.BrowOuterUpRight, 0.52f),
-        (FaceExpression.BrowOuterUpLeft, 0.52f),
     ]);
 
     // No tracked row for a furrow; modest so it reads as thought, not a scowl.
@@ -83,7 +82,7 @@ public sealed class EmotionColoringLayer
         _laughter.Episode.Reset();
     }
 
-    // Channels share shapes (outer brow sits in three), so the strongest wins, as in the mixer.
+    // Channels share shapes (outer brow sits in two), so the strongest wins, as in the mixer.
     private static void Drive(Channel channel, bool trigger, float gain, float dtSeconds, float[] offsets)
     {
         if (trigger && gain > 0f)

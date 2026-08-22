@@ -21,7 +21,8 @@ public sealed class MicroSaccadeGaze
     private readonly float _centerY;
     private readonly float _driftAmplitude;
     private readonly float _minDwellSeconds;
-    private readonly float _dwellScaleSeconds;
+    private readonly float _dwellMedianSeconds;
+    private readonly float _dwellSigma;
     private readonly float _maxDwellSeconds;
 
     private Phase _phase = Phase.Fixating;
@@ -37,18 +38,19 @@ public sealed class MicroSaccadeGaze
     private float _driftX;
     private float _driftY;
 
-    // Defaults calibrated against hardware recordings: gaze rides slightly below center
-    // with more room downward than up, and fixations are short (median under 300 ms)
-    // with an exponential tail, not the leisurely seconds-long dwells of an idle loop.
+    // Defaults pooled from 15 tracked sessions: gaze rides slightly below center, fixations
+    // have a 233 ms median with a long log-normal tail (about 102 saccades a minute), not the
+    // leisurely seconds-long dwells of an idle loop.
     public MicroSaccadeGaze(
         Random rng,
         float coneX = 0.35f,
-        float coneYUp = 0.25f,
+        float coneYUp = 0.30f,
         float coneYDown = 0.30f,
         float centerY = -0.13f,
         float driftAmplitude = 0.02f,
         float minDwellSeconds = 0.08f,
-        float dwellScaleSeconds = 0.30f,
+        float dwellMedianSeconds = 0.233f,
+        float dwellSigma = 1.3f,
         float maxDwellSeconds = 1.5f)
     {
         _rng = rng;
@@ -58,7 +60,8 @@ public sealed class MicroSaccadeGaze
         _centerY = centerY;
         _driftAmplitude = driftAmplitude;
         _minDwellSeconds = minDwellSeconds;
-        _dwellScaleSeconds = dwellScaleSeconds;
+        _dwellMedianSeconds = dwellMedianSeconds;
+        _dwellSigma = dwellSigma;
         _maxDwellSeconds = maxDwellSeconds;
         _baseY = centerY;
         GazeY = centerY;
@@ -142,12 +145,14 @@ public sealed class MicroSaccadeGaze
 
     private float SampleDwell(float arousal)
     {
-        // Exponential dwell with a floor: most fixations are brief, a few linger.
-        // Arousal shortens the tail.
-        float scale = _dwellScaleSeconds * (1f - (0.5f * Math.Clamp(arousal, 0f, 1f)));
-        double u = Math.Max(1e-6, _rng.NextDouble());
-        float dwell = _minDwellSeconds + ((float)(-Math.Log(u)) * scale);
-        return MathF.Min(dwell, _maxDwellSeconds);
+        // Log-normal dwell: tracked fixations have a 233 ms median but a mean near 550 ms and a
+        // p90 past a second, which an exponential cannot hold at once. Arousal shortens the median.
+        float median = _dwellMedianSeconds * (1f - (0.5f * Math.Clamp(arousal, 0f, 1f)));
+        double u1 = Math.Max(1e-9, _rng.NextDouble());
+        double u2 = _rng.NextDouble();
+        double gaussian = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2);
+        float dwell = median * MathF.Exp(_dwellSigma * (float)gaussian);
+        return Math.Clamp(dwell, _minDwellSeconds, _maxDwellSeconds);
     }
 
     private static float Lerp(float a, float b, float t) => a + ((b - a) * t);
